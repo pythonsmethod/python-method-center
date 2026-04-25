@@ -10,7 +10,7 @@ import re
 from anthropic import Anthropic
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-5-20250929"
 
 # Сессии в памяти. После рестарта Railway сбрасываются — позже подключим БД.
 sessions = {}
