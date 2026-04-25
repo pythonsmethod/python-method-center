@@ -1,18 +1,13 @@
 import os
+import json
+import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-import httpx
 from agents import process_message
-from dotenv import load_dotenv
-
-load_dotenv()
 
 app = FastAPI()
 
-# ================================================================
-# SENDPULSE — отправка сообщений
-# ================================================================
-async def get_token() -> str:
+async def get_token():
     async with httpx.AsyncClient() as client:
         r = await client.post(
             "https://api.sendpulse.com/oauth/access_token",
@@ -24,7 +19,6 @@ async def get_token() -> str:
         )
         return r.json()["access_token"]
 
-
 async def send_message(contact_id: str, text: str):
     token = await get_token()
     async with httpx.AsyncClient() as client:
@@ -33,39 +27,42 @@ async def send_message(contact_id: str, text: str):
             headers={"Authorization": f"Bearer {token}"},
             json={
                 "contact_id": contact_id,
-                "messages": [{
-                    "type": "text",
-                    "message": {"text": text}
-                }]
+                "messages": [{"type": "text", "message": {"text": text}}]
             }
         )
 
-
-# ================================================================
-# ВЕБХУК — сюда приходят сообщения из Telegram
-# ================================================================
 @app.post("/webhook")
 async def webhook(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+        
+        # SendPulse иногда присылает список
+        if isinstance(body, list):
+            body = body[0] if body else {}
+        
+        contact_id = None
+        text = None
+        
+        # Пробуем разные форматы
+        if isinstance(body, dict):
+            contact = body.get("contact") or {}
+            if isinstance(contact, dict):
+                contact_id = contact.get("id")
+            message = body.get("message") or {}
+            if isinstance(message, dict):
+                text = message.get("text", "").strip()
+        
+        if not contact_id or not text:
+            return JSONResponse({"status": "ignored"})
+        
+        reply = process_message(contact_id, text)
+        await send_message(contact_id, reply)
+        return JSONResponse({"status": "ok"})
+    
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        return JSONResponse({"status": "error", "detail": str(e)})
 
-    contact_id = body.get("contact", {}).get("id")
-    text = body.get("message", {}).get("text", "").strip()
-
-    if not contact_id or not text:
-        return JSONResponse({"status": "ignored"})
-
-    # Обрабатываем через агента
-    reply = process_message(contact_id, text)
-
-    # Отправляем ответ
-    await send_message(contact_id, reply)
-
-    return JSONResponse({"status": "ok"})
-
-
-# ================================================================
-# ПРОВЕРКА — что сервер живой
-# ================================================================
 @app.get("/")
 async def root():
     return {"status": "Python Method Center работает 🍀"}
