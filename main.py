@@ -55,7 +55,7 @@ async def send_message(contact_id: str, text: str) -> bool:
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "contact_id": contact_id,
-                    "messages": [{"type": "text", "message": {"text": text}}],
+                    "messages": [{"type": "text", "text": text}],
                 },
             )
             if r.status_code >= 400:
