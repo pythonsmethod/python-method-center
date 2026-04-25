@@ -55,7 +55,7 @@ async def send_message(contact_id: str, text: str) -> bool:
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "contact_id": contact_id,
-                    "messages": [{"type": "text", "text": text}],
+                    "message": {"type": "text", "text": text},
                 },
             )
             if r.status_code >= 400:
@@ -68,7 +68,7 @@ async def send_message(contact_id: str, text: str) -> bool:
 
 
 # ============================================================
-# WEBHOOK PARSING — SendPulse шлёт глубоко вложенный текст
+# WEBHOOK PARSING
 # ============================================================
 def extract_event(body):
     """Достаём contact_id и text из вебхука SendPulse.
@@ -86,14 +86,12 @@ def extract_event(body):
     if not isinstance(info, dict):
         info = {}
 
-    # contact_id может быть в нескольких местах
     contact = body.get("contact") or info.get("contact") or {}
     if isinstance(contact, dict):
         contact_id = contact.get("id") or contact.get("contact_id")
     if not contact_id:
         contact_id = info.get("contact_id") or body.get("contact_id")
 
-    # Основной путь к тексту в SendPulse Telegram
     msg1 = info.get("message") or {}
     if isinstance(msg1, dict):
         cd = msg1.get("channel_data") or {}
@@ -106,7 +104,6 @@ def extract_event(body):
         if not text:
             text = (msg1.get("text") or "").strip()
 
-    # Запасной вариант
     if not text:
         m = body.get("message") or {}
         if isinstance(m, dict):
