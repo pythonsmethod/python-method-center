@@ -51,7 +51,7 @@ async def send_message(contact_id: str, text: str) -> bool:
     try:
         async with httpx.AsyncClient(timeout=15) as cli:
             r = await cli.post(
-                "https://api.sendpulse.com/telegram/contacts/sendByContactId",
+                "https://api.sendpulse.com/telegram/contacts/send",
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "contact_id": contact_id,
