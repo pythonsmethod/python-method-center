@@ -68,10 +68,12 @@ async def send_message(contact_id: str, text: str) -> bool:
 
 
 # ============================================================
-# WEBHOOK PARSING — SendPulse шлёт по-разному
+# WEBHOOK PARSING — SendPulse шлёт глубоко вложенный текст
 # ============================================================
 def extract_event(body):
-    """Возвращает (contact_id, text) из тела вебхука SendPulse."""
+    """Достаём contact_id и text из вебхука SendPulse.
+    Главный путь: info → message → channel_data → message → text
+    """
     if isinstance(body, list):
         body = body[0] if body else {}
     if not isinstance(body, dict):
@@ -80,26 +82,35 @@ def extract_event(body):
     contact_id = None
     text = None
 
-    contact = body.get("contact") or {}
+    info = body.get("info") or {}
+    if not isinstance(info, dict):
+        info = {}
+
+    # contact_id может быть в нескольких местах
+    contact = body.get("contact") or info.get("contact") or {}
     if isinstance(contact, dict):
         contact_id = contact.get("id") or contact.get("contact_id")
+    if not contact_id:
+        contact_id = info.get("contact_id") or body.get("contact_id")
 
-    message = body.get("message") or {}
-    if isinstance(message, dict):
-        text = (message.get("text") or "").strip()
-        if not text:
-            cd = message.get("channel_data") or {}
-            if isinstance(cd, dict):
+    # Основной путь к тексту в SendPulse Telegram
+    msg1 = info.get("message") or {}
+    if isinstance(msg1, dict):
+        cd = msg1.get("channel_data") or {}
+        if isinstance(cd, dict):
+            msg2 = cd.get("message") or {}
+            if isinstance(msg2, dict):
+                text = (msg2.get("text") or "").strip()
+            if not text:
                 text = (cd.get("text") or "").strip()
+        if not text:
+            text = (msg1.get("text") or "").strip()
 
+    # Запасной вариант
     if not text:
-        info = body.get("info") or {}
-        if isinstance(info, dict):
-            msg = info.get("message") or {}
-            if isinstance(msg, dict):
-                cd = msg.get("channel_data") or {}
-                if isinstance(cd, dict):
-                    text = (cd.get("text") or "").strip()
+        m = body.get("message") or {}
+        if isinstance(m, dict):
+            text = (m.get("text") or "").strip()
 
     return contact_id, text
 
@@ -119,7 +130,7 @@ async def webhook(request: Request):
     contact_id, text = extract_event(body)
 
     if not contact_id or not text:
-        log.info("Пропускаю — нет contact_id или текста")
+        log.info(f"Пропускаю — contact_id={contact_id}, text={text}")
         return JSONResponse({"status": "ignored"})
 
     log.info(f"[{contact_id}] → {text[:100]}")
