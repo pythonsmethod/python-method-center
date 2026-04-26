@@ -1,12 +1,14 @@
+# -*- coding: utf-8 -*-
+
 # Python Method Center - Agents file
 
-# coding: utf-8
+# This file uses UTF-8 encoding for all string content
 
 # “””
-Python Method Center — Команда AI-агентов
+Python Method Center - Команда AI-агентов
 
-Маршрут: reception → navigation → [faq | prevention | individual | formula]
-→ onboarding → analysis → support → escalation (Карен)
+Маршрут: reception -> navigation -> [faq | prevention | individual | formula]
+-> onboarding -> analysis -> support -> escalation (Карен)
 “””
 import os
 import json
