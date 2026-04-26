@@ -1,3 +1,7 @@
+# Python Method Center - Agents file
+
+# coding: utf-8
+
 # “””
 Python Method Center — Команда AI-агентов
 
