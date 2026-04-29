@@ -22,6 +22,7 @@ def generate_summary(history):
         )
         return response.content[0].text.strip()
     except Exception as e:
+        print(f'[SUMMARY ERROR] {e}')
         return f'Не удалось составить резюме: {e}'
 
 def send_notification(chat_id, text):
