@@ -134,7 +134,6 @@ def process_message(contact_id, user_message):
     new_route = extract_route(reply)
     if new_route and new_route in AGENT_PROMPTS:
         session['route'] = new_route
-        session['history'] = []
         if new_route == 'escalation':
             send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
             send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
