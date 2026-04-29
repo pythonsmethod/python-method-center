@@ -141,7 +141,8 @@ def process_message(contact_id, user_message):
         return TRANSITIONS.get(new_route, 'Передаю вас дальше.')
 
     if any(phrase in reply for phrase in ['передам Карену', 'передаю Карену', 'Карен свяжется', 'передать Карену']):
-        summary = generate_summary(session['history'])
+        saved_history = session['history'].copy()
+        summary = generate_summary(saved_history)
         karen_text = f'🔴 НОВЫЙ КЛИЕНТ\n\n{summary}'
         anna_text = f'🔴 Эскалация к Карену:\n\n{summary}'
         send_notification(KAREN_CHAT_ID, karen_text)
