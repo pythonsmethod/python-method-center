@@ -12,12 +12,24 @@ NOTIFY_BOT_TOKEN = os.environ.get('NOTIFY_BOT_TOKEN')
 KAREN_CHAT_ID = '6181048365'
 ANNA_CHAT_ID = '402361257'
 
+def generate_summary(history):
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=1000,
+            system='Ты — помощник медицинского координатора. Из истории переписки составь краткое резюме на русском языке в формате:\n👤 Имя:\n🌍 Страна/город:\n📋 Диагноз:\n📅 История болезни:\n🧪 Анализы (если есть — переведи на русский, дай таблицу с показателями и нормой):\n💬 Суть обращения:\n\nБудь точен. Ничего не придумывай.',
+            messages=history
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        return f'Не удалось составить резюме: {e}'
+
 def send_notification(chat_id, text):
     if not NOTIFY_BOT_TOKEN:
         return
     url = f'https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage'
     try:
-        httpx.post(url, json={'chat_id': chat_id, 'text': text}, timeout=5)
+        httpx.post(url, json={'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}, timeout=10)
     except Exception as e:
         print(f'[NOTIFY ERROR] {e}')
 
@@ -129,7 +141,10 @@ def process_message(contact_id, user_message):
         return TRANSITIONS.get(new_route, 'Передаю вас дальше.')
 
     if any(phrase in reply for phrase in ['передам Карену', 'передаю Карену', 'Карен свяжется', 'передать Карену']):
-        send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
-        send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
+        summary = generate_summary(session['history'])
+        karen_text = f'🔴 НОВЫЙ КЛИЕНТ\n\n{summary}'
+        anna_text = f'🔴 Эскалация к Карену:\n\n{summary}'
+        send_notification(KAREN_CHAT_ID, karen_text)
+        send_notification(ANNA_CHAT_ID, anna_text)
 
     return reply
