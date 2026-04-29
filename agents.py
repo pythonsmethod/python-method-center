@@ -124,12 +124,12 @@ def process_message(contact_id, user_message):
         session['route'] = new_route
         session['history'] = []
         if new_route == 'escalation':
-                        send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
-                        send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
-                    return TRANSITIONS.get(new_route, 'Передаю вас дальше.')
+            send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
+            send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
+        return TRANSITIONS.get(new_route, 'Передаю вас дальше.')
 
     if any(phrase in reply for phrase in ['передам Карену', 'передаю Карену', 'Карен свяжется', 'передать Карену']):
-                send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
-                send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
+        send_notification(KAREN_CHAT_ID, f'🔴 Клиент {contact_id} передан вам на разбор медицинской ситуации.')
+        send_notification(ANNA_CHAT_ID, f'🔴 Эскалация к Карену: клиент {contact_id}.')
 
-        return reply
+    return reply
