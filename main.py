@@ -52,10 +52,13 @@ async def send_message(contact_id: str, text: str) -> bool:
         async with httpx.AsyncClient(timeout=15) as cli:
             r = await cli.post(
                 "https://api.sendpulse.com/telegram/contacts/send",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
+                content=__import__('json').dumps({
                     "contact_id": contact_id,
                     "message": {"type": "text", "text": text},
+                }, ensure_ascii=False).encode('utf-8'),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json; charset=utf-8"
                 },
             )
             if r.status_code >= 400:
