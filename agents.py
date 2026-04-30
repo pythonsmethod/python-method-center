@@ -16,12 +16,27 @@ ANNA_CHAT_ID = '402361257'
 
 def generate_summary(history):
     try:
+        # Filter to valid user/assistant alternating messages starting with user
+        clean = []
+        for msg in history:
+            if msg.get('role') not in ('user', 'assistant'):
+                continue
+            if clean and clean[-1]['role'] == msg['role']:
+                continue  # skip duplicate roles
+            clean.append({'role': msg['role'], 'content': str(msg.get('content', ''))})
+        # Must start with user
+        while clean and clean[0]['role'] != 'user':
+            clean.pop(0)
+        if not clean:
+            return 'История переписки пуста.'
         response = client.messages.create(
             model=MODEL,
             max_tokens=1000,
             system='Ты — помощник медицинского координатора. Из истории переписки составь краткое резюме на русском языке в формате:\n👤 Имя:\n🌍 Страна/город:\n📋 Диагноз:\n📅 История болезни:\n🧪 Анализы (если есть — переведи на русский, дай таблицу с показателями и нормой):\n💬 Суть обращения:\n\nБудь точен. Ничего не придумывай.',
-            messages=history
+            messages=clean
         )
+        if not response.content:
+            return 'Не удалось получить резюме от модели.'
         return response.content[0].text.strip()
     except Exception as e:
         print(f'[SUMMARY ERROR] {e}')
