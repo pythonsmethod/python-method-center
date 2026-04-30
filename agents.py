@@ -7,6 +7,8 @@ import json
 import re
 from anthropic import Anthropic
 import httpx
+import threading
+import time
 
 NOTIFY_BOT_TOKEN = os.environ.get('NOTIFY_BOT_TOKEN')
 KAREN_CHAT_ID = '6181048365'
@@ -142,10 +144,13 @@ def process_message(contact_id, user_message):
 
     if any(phrase in reply for phrase in ['передам Карену', 'передаю Карену', 'Карен свяжется', 'передать Карену']):
         saved_history = session['history'].copy()
-        summary = generate_summary(saved_history)
-        karen_text = f'🔴 НОВЫЙ КЛИЕНТ\n\n{summary}'
-        anna_text = f'🔴 Эскалация к Карену:\n\n{summary}'
-        send_notification(KAREN_CHAT_ID, karen_text)
-        send_notification(ANNA_CHAT_ID, anna_text)
+        def send_summary_notification(history):
+            time.sleep(5)
+            summary = generate_summary(history)
+            karen_text = f'🔴 НОВЫЙ КЛИЕНТ\n\n{summary}'
+            anna_text = f'🔴 Эскалация к Карену:\n\n{summary}'
+            send_notification(KAREN_CHAT_ID, karen_text)
+            send_notification(ANNA_CHAT_ID, anna_text)
+        threading.Thread(target=send_summary_notification, args=(saved_history,), daemon=True).start()
 
     return reply
