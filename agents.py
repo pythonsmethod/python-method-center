@@ -15,35 +15,96 @@ KAREN_CHAT_ID = '6181048365'
 ANNA_CHAT_ID = '402361257'
 
 def generate_summary(history):
+
     try:
-        # Filter to valid user/assistant alternating messages starting with user
-        clean = []
+
+        if not history:
+
+            return 'История разговора пуста.'
+
+        
+
+        conversation_text = ''
+
         for msg in history:
-            if msg.get('role') not in ('user', 'assistant'):
-                continue
-            if clean and clean[-1]['role'] == msg['role']:
-                continue  # skip duplicate roles
-            clean.append({'role': msg['role'], 'content': str(msg.get('content', ''))})
-        # Must start with user
-        while clean and clean[0]['role'] != 'user':
-            clean.pop(0)
-        # Must end with user (Anthropic requires last message to be user)
-        while clean and clean[-1]['role'] != 'user':
-            clean.pop()
-        if not clean:
-            return 'История переписки пуста.'
+
+            role = 'Клиент' if msg['role'] == 'user' else 'Lucky'
+
+            conversation_text += f'{role}: {msg["content"]}\n\n'
+
+        
+
         response = client.messages.create(
+
             model=MODEL,
-            max_tokens=1000,
-            system='Ты — помощник медицинского координатора. Из истории переписки составь краткое резюме на русском языке в формате:\n👤 Имя:\n🌍 Страна/город:\n📋 Диагноз:\n📅 История болезни:\n🧪 Анализы (если есть — переведи на русский, дай таблицу с показателями и нормой):\n💬 Суть обращения:\n\nБудь точен. Ничего не придумывай.',
-            messages=clean
+
+            max_tokens=2000,
+
+            messages=[{
+
+                'role': 'user',
+
+                'content': f'''Ты — медицинский координатор. Составь профессиональное досье пациента для реабилитолога Карена. Только на основе переписки ниже — ничего не придумывай.
+
+ПЕРЕПИСКА:
+
+{conversation_text}
+
+Оформи строго по этому шаблону:
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📋 ДОСЬЕ ПАЦИЕНТА
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+👤 ИМЯ: 
+
+🌍 СТРАНА / ГОРОД: 
+
+📞 КАК СВЯЗАТЬСЯ: (username из переписки)
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🏥 МЕДИЦИНСКАЯ КАРТИНА
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📋 ДИАГНОЗ: 
+
+📅 КОГДА ПОСТАВЛЕН: 
+
+💊 ТЕКУЩЕЕ ЛЕЧЕНИЕ: 
+
+⚠️ ТЕКУЩЕЕ СОСТОЯНИЕ: 
+
+🔴 ГЛАВНАЯ ПРОБЛЕМА: 
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+🧪 АНАЛИЗЫ
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+(Переведи названия на русский. Таблица: Показатель | Результат | Норма | Статус)
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+💬 ЗАПРОС К КАРЕНУ
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+(Что именно хочет узнать / получить пациент)'''
+
+            }]
+
         )
-        if not response.content:
-            return 'Не удалось получить резюме от модели.'
+
         return response.content[0].text.strip()
+
     except Exception as e:
-        print(f'[SUMMARY ERROR] {e}')
-        return f'Не удалось составить резюме: {e}'
+
+        return f'Ошибка генерации: {e}'
 
 def send_notification(chat_id, text):
     if not NOTIFY_BOT_TOKEN:
