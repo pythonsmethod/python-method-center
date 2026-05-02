@@ -250,6 +250,11 @@ def handle_confirmation(contact_id, session, user_message):
 
 def process_message(contact_id, user_message):
     session = get_session(contact_id)
+    # ÐÐÐÐÐ: ÐµÑÐ»Ð¸ Ð¶Ð´ÑÐ¼ Ð¿Ð¾Ð´ÑÐ²ÐµÑÐ¶Ð´ÐµÐ½Ð¸Ñ â Ð¾Ð±ÑÐ°Ð±Ð°ÑÑÐ²Ð°ÐµÐ¼ Ð¾ÑÐ´ÐµÐ»ÑÐ½Ð¾
+    if session.get('awaiting_confirmation'):
+        session['history'].append({'role': 'user', 'content': user_message})
+        return handle_confirmation(contact_id, session, user_message)
+
     session['history'].append({'role': 'user', 'content': user_message})
 
     current_route = session['route']
@@ -271,21 +276,20 @@ def process_message(contact_id, user_message):
 
     new_route = extract_route(reply)
     if new_route and new_route in AGENT_PROMPTS:
+        # ÐÐÐÐÐ: Ð¿ÐµÑÐµÑÐ²Ð°ÑÑÐ²Ð°ÐµÐ¼ ÑÑÐºÐ°Ð»Ð°ÑÐ¸Ñ Ð¸Ð· individual â Ð¿Ð¾ÐºÐ°Ð·ÑÐ²Ð°ÐµÐ¼ ÑÐ²Ð¾Ð´ÐºÑ ÐºÐ»Ð¸ÐµÐ½ÑÑ
+        if new_route == 'escalation' and current_route == 'individual':
+            summary = generate_case_summary(session)
+            session['case_summary'] = summary
+            session['awaiting_confirmation'] = True
+            return (
+                'ÐÑÐµÐ¶Ð´Ðµ ÑÐµÐ¼ Ð¿ÐµÑÐµÐ´Ð°ÑÑ Ð²Ð°Ñ ÑÐ»ÑÑÐ°Ð¹ ÐÐ°ÑÐµÐ½Ñ, ÑÐ¾ÑÑ ÑÐ±ÐµÐ´Ð¸ÑÑÑÑ, '
+                'ÑÑÐ¾ Ð·Ð°Ð¿Ð¸ÑÐ°Ð»Ð° Ð²ÑÑ Ð¿ÑÐ°Ð²Ð¸Ð»ÑÐ½Ð¾:\n\n'
+                + summary
+                + '\n\nÐÑÑÑ ÑÑÐ¾-ÑÐ¾, ÑÑÐ¾ ÑÐ¾ÑÐ¸ÑÐµ Ð´Ð¾Ð±Ð°Ð²Ð¸ÑÑ Ð¸Ð»Ð¸ ÑÑÐ¾ÑÐ½Ð¸ÑÑ?\n'
+                'ÐÐ»Ð¸ Ð²ÑÑ Ð²ÐµÑÐ½Ð¾ â Ð¸ Ñ Ð¿ÐµÑÐµÐ´Ð°Ñ?'
+            )
         session['route'] = new_route
-        if new_route == 'escalation':
-            send_notification(KAREN_CHAT_ID, f'ð´ ÐÐ»Ð¸ÐµÐ½Ñ {contact_id} Ð¿ÐµÑÐµÐ´Ð°Ð½ Ð²Ð°Ð¼ Ð½Ð° ÑÐ°Ð·Ð±Ð¾Ñ Ð¼ÐµÐ´Ð¸ÑÐ¸Ð½ÑÐºÐ¾Ð¹ ÑÐ¸ÑÑÐ°ÑÐ¸Ð¸.')
-            send_notification(ANNA_CHAT_ID, f'ð´ Ð­ÑÐºÐ°Ð»Ð°ÑÐ¸Ñ Ðº ÐÐ°ÑÐµÐ½Ñ: ÐºÐ»Ð¸ÐµÐ½Ñ {contact_id}.')
+        session['history'] = []
         return TRANSITIONS.get(new_route, 'ÐÐµÑÐµÐ´Ð°Ñ Ð²Ð°Ñ Ð´Ð°Ð»ÑÑÐµ.')
-
-    if any(phrase in reply for phrase in ['Ð¿ÐµÑÐµÐ´Ð°Ð¼ ÐÐ°ÑÐµÐ½Ñ', 'Ð¿ÐµÑÐµÐ´Ð°Ñ ÐÐ°ÑÐµÐ½Ñ', 'ÐÐ°ÑÐµÐ½ ÑÐ²ÑÐ¶ÐµÑÑÑ', 'Ð¿ÐµÑÐµÐ´Ð°ÑÑ ÐÐ°ÑÐµÐ½Ñ']):
-        saved_history = session['history'].copy()
-        def send_summary_notification(history):
-            time.sleep(5)
-            summary = generate_summary(history)
-            karen_text = f'ð´ ÐÐÐÐ«Ð ÐÐÐÐÐÐ¢\n\n{summary}'
-            anna_text = f'ð´ Ð­ÑÐºÐ°Ð»Ð°ÑÐ¸Ñ Ðº ÐÐ°ÑÐµÐ½Ñ:\n\n{summary}'
-            send_notification(KAREN_CHAT_ID, karen_text)
-            send_notification(ANNA_CHAT_ID, anna_text)
-        threading.Thread(target=send_summary_notification, args=(saved_history,), daemon=True).start()
 
     return reply
