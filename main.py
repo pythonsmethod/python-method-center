@@ -22,6 +22,20 @@ SENDPULSE_CLIENT_ID = os.environ.get("SENDPULSE_CLIENT_ID")
 SENDPULSE_CLIENT_SECRET = os.environ.get("SENDPULSE_CLIENT_SECRET")
 
 
+sessions = {}
+
+
+def get_session(contact_id):
+    if contact_id not in sessions:
+        sessions[contact_id] = {
+            'route': 'reception',
+            'history': [],
+            'awaiting_confirmation': False,
+            'case_summary': '',
+        }
+    return sessions[contact_id]
+
+
 # ============================================================
 # SENDPULSE
 # ============================================================
