@@ -190,6 +190,63 @@ def extract_route(reply):
         return m.group(1)
     return None
 
+def generate_case_summary(session):
+    history = session['history']
+    history_text = '\n'.join([
+        f"{'ÐÐ»Ð¸ÐµÐ½Ñ' if m['role']=='user' else 'Lucky'}: {m['content']}"
+        for m in history[-20:]
+    ])
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=400,
+            system=(
+                'Ð¡Ð¾ÑÑÐ°Ð²Ñ ÐºÑÐ°ÑÐºÑÑ ÑÐ²Ð¾Ð´ÐºÑ Ð¾ ÐºÐ»Ð¸ÐµÐ½ÑÐµ Ð½Ð° ÑÑÑÑÐºÐ¾Ð¼ ÑÐ·ÑÐºÐµ '
+                'Ð´Ð»Ñ Ð¿ÑÐ¾Ð²ÐµÑÐºÐ¸ ÑÐ°Ð¼Ð¸Ð¼ ÐºÐ»Ð¸ÐµÐ½ÑÐ¾Ð¼. Ð¢Ð¾Ð»ÑÐºÐ¾ ÑÐ¾, ÑÑÐ¾ Ð¾Ð½ ÑÐ°Ð¼ Ð½Ð°Ð·Ð²Ð°Ð». '
+                'Ð¡ÑÑÑÐºÑÑÑÐ°: Ð¸Ð¼Ñ/ÐºÐ¾Ð½ÑÐ°ÐºÑ, Ð´Ð¸Ð°Ð³Ð½Ð¾Ð· Ð¸ ÑÑÐ°Ð´Ð¸Ñ, ÑÐµÐºÑÑÐµÐµ Ð»ÐµÑÐµÐ½Ð¸Ðµ, '
+                'ÑÐµÐ»Ñ Ð¾Ð±ÑÐ°ÑÐµÐ½Ð¸Ñ, Ð½Ð°Ð»Ð¸ÑÐ¸Ðµ Ð°Ð½Ð°Ð»Ð¸Ð·Ð¾Ð². '
+                'ÐÐµÐ· Ð»Ð¸ÑÐ½Ð¸Ñ ÑÐ»Ð¾Ð², Ð±ÐµÐ· ÑÐ²Ð¾Ð¸Ñ Ð¾ÑÐµÐ½Ð¾Ðº.'
+            ),
+            messages=[{
+                'role': 'user',
+                'content': f'ÐÐ¸Ð°Ð»Ð¾Ð³:\n\n{history_text}'
+            }]
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        print(f'[SUMMARY ERROR] {e}')
+        return '(Ð½Ðµ ÑÐ´Ð°Ð»Ð¾ÑÑ ÑÑÐ¾ÑÐ¼Ð¸ÑÐ¾Ð²Ð°ÑÑ Ð°Ð²ÑÐ¾Ð¼Ð°ÑÐ¸ÑÐµÑÐºÐ¸)'
+
+
+def handle_confirmation(contact_id, session, user_message):
+    confirmed = any(w in user_message.lower() for w in [
+        'Ð²ÐµÑÐ½Ð¾', 'Ð¿ÑÐ°Ð²Ð¸Ð»ÑÐ½Ð¾', 'Ð¾ÑÐ¿ÑÐ°Ð²Ð»ÑÐ¹ÑÐµ', 'Ð¿ÐµÑÐµÐ´Ð°Ð²Ð°Ð¹ÑÐµ',
+        'Ð´Ð°', 'Ð¾Ðº', 'Ð¾ÐºÐµÐ¹', 'ok', 'Ð²ÑÑ ÑÐ°Ðº', 'Ð²ÑÐµ ÑÐ°Ðº', 'Ð¼Ð¾Ð¶Ð½Ð¾',
+        'ÑÐ¾Ð³Ð»Ð°ÑÐµÐ½', 'ÑÐ¾Ð³Ð»Ð°ÑÐ½Ð°', 'Ð²ÑÑ Ð²ÐµÑÐ½Ð¾', 'Ð²ÑÐµ Ð²ÐµÑÐ½Ð¾'
+    ])
+    if confirmed:
+        session['awaiting_confirmation'] = False
+        session['route'] = 'escalation'
+        session['history'] = []
+        summary_for_karen = session.get('case_summary', '')
+        try:
+            send_notification('karen', contact_id, summary_for_karen)
+        except Exception as e:
+            print(f'[NOTIFY ERROR] {e}')
+        return (
+            'ÐÑÐ¸Ð½ÑÑÐ¾. ÐÐµÑÐµÐ´Ð°Ñ Ð²Ð°Ñ ÑÐ»ÑÑÐ°Ð¹ ÐÐ°ÑÐµÐ½Ñ Ð¿ÑÑÐ¼Ð¾ ÑÐµÐ¹ÑÐ°Ñ.\n\n'
+            'ÐÐ½ ÑÐ²ÑÐ¶ÐµÑÑÑ Ñ Ð²Ð°Ð¼Ð¸ Ð² Ð±Ð»Ð¸Ð¶Ð°Ð¹ÑÐµÐµ Ð²ÑÐµÐ¼Ñ â Ð»Ð¸ÑÐ½Ð¾.\n'
+            'Ð¯ Ð¾ÑÑÐ°ÑÑÑ ÑÑÐ´Ð¾Ð¼, ÐµÑÐ»Ð¸ Ð¿Ð¾ÑÐ²ÑÑÑÑ Ð²Ð¾Ð¿ÑÐ¾ÑÑ.'
+        )
+    else:
+        session['case_summary'] += f'\n+ {user_message}'
+        return (
+            'ÐÐ°Ð¿Ð¸ÑÐ°Ð»Ð°. ÐÐ±Ð½Ð¾Ð²Ð»ÑÐ½Ð½Ð°Ñ ÑÐ²Ð¾Ð´ÐºÐ°:\n\n'
+            + session['case_summary']
+            + '\n\nÐ§ÑÐ¾-ÑÐ¾ ÐµÑÑ ÑÐ¾ÑÐ¸ÑÐµ Ð´Ð¾Ð±Ð°Ð²Ð¸ÑÑ? '
+            'ÐÐ»Ð¸ Ð²ÑÑ Ð²ÐµÑÐ½Ð¾ â Ð¸ Ñ Ð¿ÐµÑÐµÐ´Ð°Ñ ÐÐ°ÑÐµÐ½Ñ?'
+        )
+
 
 def process_message(contact_id, user_message):
     session = get_session(contact_id)
