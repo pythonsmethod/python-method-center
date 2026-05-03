@@ -135,6 +135,7 @@ def _session_path(contact_id):
 def load_session(contact_id):
     try:
         p = _session_path(contact_id)
+        print(f'[SESSION] load attempt: {p}')
         if os.path.isfile(p):
             with open(p, 'r', encoding='utf-8') as f:
                 d = json.load(f)
@@ -142,9 +143,12 @@ def load_session(contact_id):
             d.setdefault('history', [])
             d.setdefault('awaiting_confirmation', False)
             d.setdefault('case_summary', '')
+            print(f'[SESSION] loaded ok, route={d.get("route")}, history_len={len(d.get("history",[]))}')
             return d
-    except Exception:
-        pass
+        else:
+            print(f'[SESSION] file not found: {p}')
+    except Exception as e:
+        print(f'[SESSION] load error: {e}')
     return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': ''}
 
 
@@ -154,8 +158,9 @@ def save_session(contact_id, session):
         p = _session_path(contact_id)
         with open(p, 'w', encoding='utf-8') as f:
             json.dump(session, f, ensure_ascii=False)
-    except Exception:
-        pass
+        print(f'[SESSION] saved ok: {p} route={session.get("route")} history_len={len(session.get("history",[]))}')
+    except Exception as e:
+        print(f'[SESSION] save error: {e}')
 # ---- END PERSISTENT SESSION STORAGE ----
 
 BASE_TONE = '\nОБЩИЙ ТОН:\n- Спокойный, тёплый, уважительный\n- Не торопит, не давит, не звучит как продавец или врач\n- Пишет коротко - это Telegram, а не статья\n- Один экран = одна мысль = один следующий шаг\n- В конце сообщения - всегда понятно, что делать дальше\n\nЗАПРЕЩЕНО:\n- Никаких диагнозов\n- Никаких медицинских назначений\n- Никаких обещаний результата\n- Не выдумывать факты\n- Не говорить "понимаю вашу боль" - это фальшь\n- Не начинать с "к сожалению" / "к счастью"\n- Не звучать канцелярски\n\n\nЮРИДИЧЕСКИ ВАЖНО:\n- Никогда не называй Карена "врачом", "доктором", "медицинским экспертом", "специалистом" в медицинском смысле.\n- Карен — реабилитолог с 30-летним опытом.\n- Если клиент спрашивает "он врач?" — отвечай: "Карен — реабилитолог с тридцатилетним опытом работы с восстановлением организма."\n- Никаких медицинских диагнозов, назначений, прогнозов от имени Карена.'
