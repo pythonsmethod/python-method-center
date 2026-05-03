@@ -123,20 +123,9 @@ sessions = {}
 # ============================================================
 # PERSISTENT HISTORY — сохраняем на диск, чтобы помнить клиентов навсегда
 # ============================================================
-import threading as _threading
 
 HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions')
-_session_lock = _threading.Lock()
-
-
-def _ensure_history_dir():
-    try:
-        os.makedirs(HISTORY_DIR, exist_ok=True)
-    except Exception as e:
-        print(f'[HISTORY] Cannot create dir: {e}')
-
-
-_ensure_history_dir()
+_session_lock = threading.Lock()
 
 
 def load_session(contact_id: str) -> dict:
