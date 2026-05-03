@@ -124,7 +124,7 @@ sessions = {}
 # PERSISTENT HISTORY — сохраняем на диск, чтобы помнить клиентов навсегда
 # ============================================================
 
-HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions')
+HISTORY_DIR = os.environ.get('HISTORY_DIR', '/tmp/pm_sessions')
 _session_lock = threading.Lock()
 
 
