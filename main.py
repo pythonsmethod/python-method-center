@@ -5,7 +5,7 @@ FastAPI + SendPulse + Claude AI Agents. Деплой: Railway.
 import os
 import logging
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
 from agents import process_message
@@ -17,6 +17,11 @@ logging.basicConfig(
 log = logging.getLogger("python-method")
 
 app = FastAPI(title="Python Method Center")
+
+# Путь к PDF оферты (файл лежит рядом с main.py в корне репо)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OFERTA_PATH = os.path.join(BASE_DIR, "Python Method Oferta v2.pdf")
+OFERTA_URL = "https://python-method-center-production-24ec.up.railway.app/documents/oferta"
 
 SENDPULSE_CLIENT_ID = os.environ.get("SENDPULSE_CLIENT_ID")
 SENDPULSE_CLIENT_SECRET = os.environ.get("SENDPULSE_CLIENT_SECRET")
@@ -81,6 +86,40 @@ async def send_message(contact_id: str, text: str) -> bool:
             return True
     except Exception as e:
         log.error(f"send_message error: {e}")
+        return False
+
+
+async def send_document(contact_id: str, document_url: str, caption: str = "") -> bool:
+    """Отправить PDF (или другой файл) клиенту через SendPulse."""
+    token = await get_sendpulse_token()
+    if not token:
+        log.error("Нет токена SendPulse")
+        return False
+    try:
+        payload = {
+            "contact_id": contact_id,
+            "message": {
+                "type": "document",
+                "document": document_url,
+            }
+        }
+        if caption:
+            payload["message"]["caption"] = caption
+        async with httpx.AsyncClient(timeout=30) as cli:
+            r = await cli.post(
+                "https://api.sendpulse.com/telegram/contacts/send",
+                content=__import__('json').dumps(payload, ensure_ascii=False).encode('utf-8'),
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json; charset=utf-8"
+                },
+            )
+            if r.status_code >= 400:
+                log.error(f"SendPulse send_document {r.status_code}: {r.text}")
+                return False
+            return True
+    except Exception as e:
+        log.error(f"send_document error: {e}")
         return False
 
 
@@ -155,8 +194,22 @@ async def webhook(request: Request):
         log.error(f"Agent error: {e}")
         reply = "Что-то на стороне системы. Напишите ещё раз через минуту 🌿"
 
+    # Проверяем — Lucky попросил отправить оферту?
+    send_oferta = "[SEND_OFERTA]" in reply
+    if send_oferta:
+        reply = reply.replace("[SEND_OFERTA]", "").strip()
+
     log.info(f"[{contact_id}] ← {reply[:100]}")
     sent = await send_message(contact_id, reply)
+
+    if send_oferta and sent:
+        log.info(f"[{contact_id}] → отправляю оферту")
+        await send_document(
+            contact_id,
+            OFERTA_URL,
+            caption="Договор-оферта Python Method"
+        )
+
     return JSONResponse({"status": "ok" if sent else "send_failed"})
 
 
@@ -171,3 +224,13 @@ async def root():
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+
+@app.get("/documents/oferta")
+async def serve_oferta():
+    """Отдаём PDF оферты — отсюда SendPulse его скачивает для отправки клиенту."""
+    return FileResponse(
+        OFERTA_PATH,
+        media_type="application/pdf",
+        filename="Python_Method_Oferta.pdf"
+    )
