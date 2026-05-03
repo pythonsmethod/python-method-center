@@ -3,8 +3,6 @@ Python Method Center — главный сервер.
 FastAPI + SendPulse + Claude AI Agents. Деплой: Railway.
 """
 import os
-import json
-import hashlib
 import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
@@ -30,51 +28,6 @@ SENDPULSE_CLIENT_SECRET = os.environ.get("SENDPULSE_CLIENT_SECRET")
 
 
 sessions = {}
-
-# ============================================================
-# PERSISTENT SESSION STORAGE
-# ============================================================
-HISTORY_DIR = os.environ.get('PM_HISTORY_DIR', '/tmp/pm_sessions')
-try:
-    os.makedirs(HISTORY_DIR, exist_ok=True)
-except Exception:
-    pass
-
-
-def _session_path(contact_id):
-    key = hashlib.md5(str(contact_id).encode()).hexdigest()
-    return os.path.join(HISTORY_DIR, f'{key}.json')
-
-
-def _save_session(contact_id, session):
-    try:
-        with open(_session_path(contact_id), 'w', encoding='utf-8') as f:
-            json.dump(session, f, ensure_ascii=False)
-    except Exception:
-        pass
-
-
-def _load_session(contact_id):
-    try:
-        with open(_session_path(contact_id), 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
-def get_session(contact_id):
-    if contact_id not in sessions:
-        saved = _load_session(contact_id)
-        if saved:
-            sessions[contact_id] = saved
-        else:
-            sessions[contact_id] = {
-                'route': 'reception',
-                'history': [],
-                'awaiting_confirmation': False,
-                'case_summary': '',
-            }
-    return sessions[contact_id]
 
 
 # ============================================================
@@ -226,7 +179,6 @@ async def webhook(request: Request):
 
     try:
         reply = process_message(contact_id, text)
-        _save_session(contact_id, sessions.get(contact_id, {}))
     except Exception as e:
         log.error(f"Agent error: {e}")
         reply = "Что-то на стороне системы. Напишите ещё раз через минуту 🌿"
