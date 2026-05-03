@@ -130,7 +130,8 @@ _session_lock = threading.Lock()
 
 def load_session(contact_id: str) -> dict:
     """Загрузить сессию из файла. Возвращает дефолтную если файла нет."""
-    path = os.path.join(HISTORY_DIR, f'{contact_id}.json')
+    safe_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(contact_id))
+    path = os.path.join(HISTORY_DIR, f'{safe_id}.json')
     try:
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
@@ -153,7 +154,8 @@ def load_session(contact_id: str) -> dict:
 def save_session(contact_id: str, session: dict):
     """Сохранить сессию в файл."""
     _ensure_history_dir()
-    path = os.path.join(HISTORY_DIR, f'{contact_id}.json')
+    safe_id = re.sub(r'[^a-zA-Z0-9_-]', '_', str(contact_id))
+    path = os.path.join(HISTORY_DIR, f'{safe_id}.json')
     try:
         with _session_lock:
             with open(path, 'w', encoding='utf-8') as f:
