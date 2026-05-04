@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+h# -*- coding: utf-8 -*-
 # Python Method Center - Agents
 # Full version - no triple quotes
 
@@ -177,7 +177,7 @@ def load_session(contact_id):
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
-    return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': ''}
+    return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': '', 'client_data': {'name': '', 'country': '', 'telegram_id': str(contact_id), 'tariff': ''}}
 
 
 def save_session(contact_id, session):
@@ -261,7 +261,15 @@ TRANSITIONS = {
 
 def get_session(contact_id):
     if contact_id not in sessions:
-        sessions[contact_id] = load_session(contact_id)
+        loaded = load_session(contact_id)
+        if 'client_data' not in loaded:
+            loaded['client_data'] = {
+                'name': '',
+                'country': '',
+                'telegram_id': str(contact_id),
+                'tariff': '',
+            }
+        sessions[contact_id] = loaded
     return sessions[contact_id]
 
 
@@ -392,3 +400,119 @@ def process_message(contact_id, user_message):
 
     save_session(contact_id, session)
     return reply
+
+
+# ============================================================
+# STRIPE PAYMENT INTEGRATION
+# ============================================================
+import requests
+import datetime
+
+CLIENT_DB_FILE = '/app/client_database.json'
+CLIENT_START_NUMBER = int(os.environ.get('CLIENT_START_NUMBER', '380'))
+TARIFF_1_LINK = os.environ.get('TARIFF_1_LINK', '')
+TARIFF_2_LINK = os.environ.get('TARIFF_2_LINK', '')
+
+
+def load_client_db():
+        if os.path.exists(CLIENT_DB_FILE):
+                    try:
+                                    with open(CLIENT_DB_FILE, 'r', encoding='utf-8') as f:
+                                                        return json.load(f)
+                    except Exception:
+                                    pass
+                            return {'next_number': CLIENT_START_NUMBER, 'clients': {}}
+
+
+def save_client_db(db):
+        with open(CLIENT_DB_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(db, f, ensure_ascii=False, indent=2)
+
+
+def get_payment_link(contact_id, tariff_number):
+        base = TARIFF_1_LINK if tariff_number == 1 else TARIFF_2_LINK
+        return f'{base}?client_reference_id={contact_id}'
+
+
+def register_paid_client(contact_id, telegram_id, name, country, tariff, summary):
+        db = load_client_db()
+        cid = str(contact_id)
+        if cid in db['clients']:
+                    return db['clients'][cid]['number']
+                number = db['next_number']
+    db['clients'][cid] = {
+                'number': number,
+                'telegram_id': telegram_id,
+                'name': name,
+                'country': country,
+                'tariff': tariff,
+                'date': datetime.datetime.now().strftime('%d.%m.%Y')
+    }
+    db['next_number'] = number + 1
+    save_client_db(db)
+    send_karen_paid_notification(number, telegram_id, name, country, tariff, summary)
+    return number
+
+
+def send_karen_paid_notification(number, telegram_id, name, country, tariff, summary):
+        if not NOTIFY_BOT_TOKEN:
+                    return
+                clickable = f'<a href="tg://user?id={telegram_id}">{name}</a>'
+    text = (
+                f'Payment NEW CLIENT #{number}\n\n'
+                f'User: {clickable}\n'
+                f'Country: {country}\n'
+                f'Tariff: {tariff}\n\n'
+                f'---\n'
+                f'PROFILE:\n{summary}'
+    )
+    url = f'https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage'
+    try:
+                requests.post(url, json={
+                                'chat_id': KAREN_CHAT_ID,
+                                'text': text,
+                                'parse_mode': 'HTML'
+                })
+except Exception as e:
+        print(f'[NOTIFY ERROR] {e}')
+
+
+def on_payment_confirmed(contact_id, telegram_id, name, tariff):
+        session = get_session(str(contact_id))
+    cd = session.get('client_data', {})
+    if name:
+                cd['name'] = name
+            if tariff:
+                        cd['tariff'] = tariff
+                    country = cd.get('country', 'Not specified')
+    summary = generate_summary(session.get('history', []))
+    number = register_paid_client(
+                contact_id=str(contact_id),
+                telegram_id=telegram_id,
+                name=cd.get('name', 'Not specified'),
+                country=country,
+                tariff=tariff,
+                summary=summary,
+    )
+    send_payment_thanks(telegram_id, name, number)
+    return number
+
+
+def send_payment_thanks(telegram_id, name, number):
+        if not NOTIFY_BOT_TOKEN:
+                    return
+                first_name = name.split()[0] if name else 'Dear participant'
+    text = (
+                f'{first_name}, your payment has been received!\n\n'
+                f'You are client #{number} of the Python Method center.\n\n'
+                f'Karen has already received your profile and will contact you personally soon.\n\n'
+                f'We are here for you'
+    )
+    url = f'https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage'
+    try:
+                requests.post(url, json={
+                                'chat_id': telegram_id,
+                                'text': text
+                })
+except Exception as e:
+        print(f'[THANKS ERROR] {e}')
