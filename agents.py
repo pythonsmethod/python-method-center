@@ -1,4 +1,4 @@
-h# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # Python Method Center - Agents
 # Full version - no triple quotes
 
