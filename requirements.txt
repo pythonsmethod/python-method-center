@@ -4,3 +4,6 @@ anthropic
 httpx
 python-dotenv
 psycopg2-binary
+
+stripe
+requests
