@@ -327,7 +327,8 @@ def handle_confirmation(contact_id, session, user_message):
         session['history'] = []
         summary_for_karen = session.get('case_summary', '')
         try:
-            send_notification('karen', contact_id, summary_for_karen)
+            text = f'📋 Клиент подтвердил сводку. Передаю случай:\n\n{summary_for_karen}'
+            send_notification(KAREN_CHAT_ID, text)
         except Exception as e:
             print(f'[NOTIFY ERROR] {e}')
         return (
