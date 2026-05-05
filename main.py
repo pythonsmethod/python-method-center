@@ -224,11 +224,11 @@ async def stripe_webhook(request: Request):
 
     if event["type"] == "checkout.session.completed":
         session_obj = event["data"]["object"]
-        client_reference_id = session_obj.get("client_reference_id")
-        amount_total = session_obj.get("amount_total", 0)
-        customer_details = session_obj.get("customer_details") or {}
-        customer_name = customer_details.get("name", "")
-        customer_email = customer_details.get("email", "")
+        client_reference_id = getattr(session_obj, "client_reference_id", None)
+        amount_total = getattr(session_obj, "amount_total", 0)
+        customer_details = getattr(session_obj, "customer_details", None) or {}
+        customer_name = getattr(customer_details, "name", "") if hasattr(customer_details, "name") else customer_details.get("name", "")
+        customer_email = getattr(customer_details, "email", "") if hasattr(customer_details, "email") else customer_details.get("email", "")
 
         if amount_total == 111300:
             tariff_name = "Tariff Znakomstvo - $1113 / 6 weeks"
