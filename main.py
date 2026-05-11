@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
 from agents import process_message, on_payment_confirmed
+from ai_router import health_check as ai_health_check
 
 logging.basicConfig(
     level=logging.INFO,
@@ -266,7 +267,13 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    ai_status = ai_health_check()
+    return {
+        "ok": True,
+        "ai_providers": ai_status,
+        "claude_available": ai_status["claude"]["available"],
+        "gpt_available": ai_status["gpt"]["available"],
+    }
 
 
 @app.get("/documents/oferta")
