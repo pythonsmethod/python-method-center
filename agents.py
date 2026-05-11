@@ -8,6 +8,7 @@ import re
 from anthropic import Anthropic
 from ai_router import ask_claude, ask_gpt, gpt_generate_summary, gpt_analyze_client_status, health_check
 import httpx
+from central_ai_core import build_context_package
 import threading
 import time
 
@@ -146,6 +147,18 @@ def _init_db():
             '    last_contact TIMESTAMPTZ DEFAULT NOW()'
             ')'
         )
+        # Central AI Core v2.0 — add new columns if not exist
+        for col_sql in [
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS agent_current TEXT NOT NULL DEFAULT 'reception'",
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS risk_score FLOAT NOT NULL DEFAULT 0.0',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS hang_stage TEXT',
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'new'",
+        ]:
+            try:
+                cur.execute(col_sql)
+            except Exception:
+                conn.rollback()
+        
         conn.commit()
         cur.close()
         conn.close()
@@ -162,7 +175,8 @@ def load_session(contact_id):
         conn = _get_conn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
-            'SELECT route, history, case_summary, awaiting_confirmation '
+            'SELECT route, history, case_summary, awaiting_confirmation, '
+            'agent_current, risk_score, hang_stage, payment_status '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -175,6 +189,10 @@ def load_session(contact_id):
                 'history': row['history'] if row['history'] else [],
                 'case_summary': row['case_summary'] or '',
                 'awaiting_confirmation': row['awaiting_confirmation'] or False,
+                'agent_current': row.get('agent_current', row['route']),
+                'risk_score': float(row.get('risk_score') or 0.0),
+                'hang_stage': row.get('hang_stage'),
+                'payment_status': row.get('payment_status', 'new'),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -186,20 +204,30 @@ def save_session(contact_id, session):
         conn = _get_conn()
         cur = conn.cursor()
         cur.execute(
-            'INSERT INTO pm_sessions (contact_id, route, history, case_summary, awaiting_confirmation, last_contact) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW()) '
+            'INSERT INTO pm_sessions '
+            '(contact_id, route, history, case_summary, awaiting_confirmation, last_contact, '
+            'agent_current, risk_score, hang_stage, payment_status) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
             '    case_summary = EXCLUDED.case_summary, '
             '    awaiting_confirmation = EXCLUDED.awaiting_confirmation, '
-            '    last_contact = NOW()',
+            '    last_contact = NOW(), '
+            '    agent_current = EXCLUDED.agent_current, '
+            '    risk_score = EXCLUDED.risk_score, '
+            '    hang_stage = EXCLUDED.hang_stage, '
+            '    payment_status = EXCLUDED.payment_status',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
                 json.dumps(session.get('history', []), ensure_ascii=False),
                 session.get('case_summary', ''),
                 session.get('awaiting_confirmation', False),
+                session.get('agent_current', session.get('route', 'reception')),
+                float(session.get('risk_score', 0.0)),
+                session.get('hang_stage'),
+                session.get('payment_status', 'new'),
             )
         )
         conn.commit()
@@ -454,6 +482,15 @@ def handle_confirmation(contact_id, session, user_message):
 
 def process_message(contact_id, user_message):
     session = get_session(contact_id)
+
+    # ── Central AI Core v2.0 ─────────────────────────────────────────────
+    ctx = build_context_package(contact_id, session, user_message)
+    session['agent_current']  = ctx['agent_current']
+    session['risk_score']     = ctx['risk_score']
+    session['hang_stage']     = ctx['hang_stage']
+    session['payment_status'] = ctx['payment_status']
+    # ─────────────────────────────────────────────────────────────────────
+
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
     if session.get('awaiting_confirmation'):
         session['history'].append({'role': 'user', 'content': user_message})
