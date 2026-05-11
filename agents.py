@@ -6,6 +6,7 @@ import os
 import json
 import re
 from anthropic import Anthropic
+from ai_router import ask_claude, ask_gpt, gpt_generate_summary, gpt_analyze_client_status, health_check
 import httpx
 import threading
 import time
@@ -464,13 +465,13 @@ def process_message(contact_id, user_message):
     prompt = AGENT_PROMPTS.get(current_route, LUCKY_PROMPT)
 
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=600,
-            system=prompt,
+        reply = ask_claude(
+            system_prompt=prompt,
             messages=session['history'][-10:],
+            max_tokens=600,
+            task_type='dialogue',
+            route=current_route,
         )
-        reply = response.content[0].text.strip()
     except Exception as e:
         print(f'[AI ERROR] {e}')
         return 'Что-то на стороне системы. Напишите, пожалуйста, ещё раз через минуту.'
