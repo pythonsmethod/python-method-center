@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 anthropic
+openai
 httpx
 python-dotenv
 psycopg2-binary
