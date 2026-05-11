@@ -9,6 +9,7 @@ from anthropic import Anthropic
 from ai_router import ask_claude, ask_gpt, gpt_generate_summary, gpt_analyze_client_status, health_check
 import httpx
 from central_ai_core import build_context_package
+from state_engine import analyze as state_analyze
 import threading
 import time
 
@@ -153,6 +154,9 @@ def _init_db():
             'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS risk_score FLOAT NOT NULL DEFAULT 0.0',
             'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS hang_stage TEXT',
             "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'new'",
+            # State Engine v2.0 columns
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS current_intent TEXT NOT NULL DEFAULT 'question'",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS current_state TEXT NOT NULL DEFAULT 'new'",
         ]:
             try:
                 cur.execute(col_sql)
@@ -176,7 +180,8 @@ def load_session(contact_id):
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             'SELECT route, history, case_summary, awaiting_confirmation, '
-            'agent_current, risk_score, hang_stage, payment_status '
+            'agent_current, risk_score, hang_stage, payment_status, '
+            'current_intent, current_state '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -193,6 +198,8 @@ def load_session(contact_id):
                 'risk_score': float(row.get('risk_score') or 0.0),
                 'hang_stage': row.get('hang_stage'),
                 'payment_status': row.get('payment_status', 'new'),
+                'current_intent': row.get('current_intent', 'question'),
+                'current_state':  row.get('current_state', 'new'),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -206,8 +213,9 @@ def save_session(contact_id, session):
         cur.execute(
             'INSERT INTO pm_sessions '
             '(contact_id, route, history, case_summary, awaiting_confirmation, last_contact, '
-            'agent_current, risk_score, hang_stage, payment_status) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s) '
+            'agent_current, risk_score, hang_stage, payment_status, '
+            'current_intent, current_state) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -217,7 +225,9 @@ def save_session(contact_id, session):
             '    agent_current = EXCLUDED.agent_current, '
             '    risk_score = EXCLUDED.risk_score, '
             '    hang_stage = EXCLUDED.hang_stage, '
-            '    payment_status = EXCLUDED.payment_status',
+            '    payment_status = EXCLUDED.payment_status, '
+            '    current_intent = EXCLUDED.current_intent, '
+            '    current_state  = EXCLUDED.current_state',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -228,6 +238,8 @@ def save_session(contact_id, session):
                 float(session.get('risk_score', 0.0)),
                 session.get('hang_stage'),
                 session.get('payment_status', 'new'),
+                session.get('current_intent', 'question'),
+                session.get('current_state', 'new'),
             )
         )
         conn.commit()
@@ -489,6 +501,18 @@ def process_message(contact_id, user_message):
     session['risk_score']     = ctx['risk_score']
     session['hang_stage']     = ctx['hang_stage']
     session['payment_status'] = ctx['payment_status']
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── State Engine v2.0 ────────────────────────────────────────────────
+    try:
+        engine = state_analyze(contact_id, user_message, session, ctx)
+        session['current_intent'] = engine['intent']
+        session['current_state']  = engine['state']
+    except Exception as _se_err:
+        import logging as _log
+        _log.getLogger('state_engine').warning('[STATE ENGINE] error: %s', _se_err)
+        session.setdefault('current_intent', 'question')
+        session.setdefault('current_state', 'new')
     # ─────────────────────────────────────────────────────────────────────
 
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
