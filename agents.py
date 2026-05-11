@@ -10,6 +10,7 @@ from ai_router import ask_claude, ask_gpt, gpt_generate_summary, gpt_analyze_cli
 import httpx
 from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
+from route_resolver import resolve_route
 import threading
 import time
 
@@ -181,7 +182,8 @@ def load_session(contact_id):
         cur.execute(
             'SELECT route, history, case_summary, awaiting_confirmation, '
             'agent_current, risk_score, hang_stage, payment_status, '
-            'current_intent, current_state '
+            'current_intent, current_state, '
+            'proposed_route, proposed_agent, route_confidence, route_reason '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -200,6 +202,10 @@ def load_session(contact_id):
                 'payment_status': row.get('payment_status', 'new'),
                 'current_intent': row.get('current_intent', 'question'),
                 'current_state':  row.get('current_state', 'new'),
+                'proposed_route':   row.get('proposed_route', row['route']),
+                'proposed_agent':   row.get('proposed_agent', row['route']),
+                'route_confidence': float(row.get('route_confidence') or 0.0),
+                'route_reason':     row.get('route_reason', ''),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -214,8 +220,9 @@ def save_session(contact_id, session):
             'INSERT INTO pm_sessions '
             '(contact_id, route, history, case_summary, awaiting_confirmation, last_contact, '
             'agent_current, risk_score, hang_stage, payment_status, '
-            'current_intent, current_state) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s) '
+            'current_intent, current_state, '
+            'proposed_route, proposed_agent, route_confidence, route_reason) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -227,7 +234,11 @@ def save_session(contact_id, session):
             '    hang_stage = EXCLUDED.hang_stage, '
             '    payment_status = EXCLUDED.payment_status, '
             '    current_intent = EXCLUDED.current_intent, '
-            '    current_state  = EXCLUDED.current_state',
+            '    current_state  = EXCLUDED.current_state, '
+            '    proposed_route   = EXCLUDED.proposed_route, '
+            '    proposed_agent   = EXCLUDED.proposed_agent, '
+            '    route_confidence = EXCLUDED.route_confidence, '
+            '    route_reason     = EXCLUDED.route_reason',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -240,6 +251,10 @@ def save_session(contact_id, session):
                 session.get('payment_status', 'new'),
                 session.get('current_intent', 'question'),
                 session.get('current_state', 'new'),
+                session.get('proposed_route', session.get('route', 'reception')),
+                session.get('proposed_agent', session.get('route', 'reception')),
+                float(session.get('route_confidence', 0.0)),
+                session.get('route_reason', ''),
             )
         )
         conn.commit()
@@ -513,6 +528,27 @@ def process_message(contact_id, user_message):
         _log.getLogger('state_engine').warning('[STATE ENGINE] error: %s', _se_err)
         session.setdefault('current_intent', 'question')
         session.setdefault('current_state', 'new')
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── Route Resolver v3.0 ──────────────────────────────────────────────
+    try:
+        rr = resolve_route(
+            intent  = session.get('current_intent', 'question'),
+            state   = session.get('current_state', 'new'),
+            context = ctx,
+            session = session,
+        )
+        session['proposed_route']   = rr['proposed_route']
+        session['proposed_agent']   = rr['proposed_agent']
+        session['route_confidence'] = rr['route_confidence']
+        session['route_reason']     = rr['route_reason']
+    except Exception as _rr_err:
+        import logging as _rr_log
+        _rr_log.getLogger('route_resolver').warning('[ROUTE RESOLVER] error: %s', _rr_err)
+        session.setdefault('proposed_route', session.get('route', 'reception'))
+        session.setdefault('proposed_agent', session.get('route', 'reception'))
+        session.setdefault('route_confidence', 0.0)
+        session.setdefault('route_reason', 'resolver_error')
     # ─────────────────────────────────────────────────────────────────────
 
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
