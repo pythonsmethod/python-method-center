@@ -43,13 +43,27 @@ def _rule_escalation(intent, state, ctx, session):
     return intent == 'escalation_request'
 
 def _rule_fear(intent, state, ctx, session):
-    return (intent == 'fear' and state == 'anxious') or (state == 'anxious' and ctx.get('risk_score', 0) >= 0.6)
+    rs = float(ctx.get('risk_score', 0))
+    # Original: explicit fear+anxious pair
+    if intent == 'fear' and state == 'anxious':
+        return True
+    # Original: anxious state + elevated risk
+    if state == 'anxious' and rs >= 0.6:
+        return True
+    # BUG-L3-2 FIX: high risk score overrides intent/state (e.g. "рак метастазы" → analysis_upload hijack)
+    if rs >= 0.75:
+        return True
+    # BUG-L3-3 FIX: fear intent inside support/onboarding route (deterministic state blocks anxious)
+    if intent == 'fear' and rs >= 0.4:
+        return True
+    return False
 
 def _rule_paid(intent, state, ctx, session):
     return intent == 'paid' or ctx.get('payment_status') == 'paid'
 
 def _rule_ready_to_pay(intent, state, ctx, session):
-    return intent == 'ready_to_pay' or state == 'ready'
+    # BUG-L3-5 FIX: state=choosing (tariff_recommend route) also implies readiness to pay
+    return intent == 'ready_to_pay' or state == 'ready' or state == 'choosing'
 
 def _rule_analysis(intent, state, ctx, session):
     return intent == 'analysis_upload'
@@ -72,10 +86,11 @@ def _rule_new_question(intent, state, ctx, session):
     return intent == 'question' and state == 'new'
 
 def _rule_onboarding(intent, state, ctx, session):
+    # BUG-L3-1 FIX: exclude waiting intent — paid user waiting needs support_route, not onboarding
     ps = ctx.get('payment_status', 'new')
     paid_context = (ps == 'paid')
     paid_signal = intent in ('onboarding', 'paid') or state in ('onboarding', 'paid')
-    return paid_context and paid_signal
+    return paid_context and paid_signal and intent != 'waiting'
 
 
 _RULES = [
