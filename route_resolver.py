@@ -72,20 +72,33 @@ def _rule_new_question(intent, state, ctx, session):
     return intent == 'question' and state == 'new'
 
 def _rule_onboarding(intent, state, ctx, session):
-    return (intent == 'onboarding' or state == 'onboarding') and ctx.get('payment_status') == 'paid'
+    ps = ctx.get('payment_status', 'new')
+    paid_context = (ps == 'paid')
+    paid_signal = intent in ('onboarding', 'paid') or state in ('onboarding', 'paid')
+    return paid_context and paid_signal
 
 
 _RULES = [
     # (priority, route_name,        agent_key,        condition_fn,           reason)
+    # Priority 1: escalation is always highest
     (1,  'escalation_route', 'escalation_route', _rule_escalation,   'User requested human / escalation'),
+    # Priority 2: emotional crisis — trust/fear route
     (2,  'trust_route',      'trust_route',      _rule_fear,          'High fear/anxiety detected'),
-    (3,  'onboarding_route', 'onboarding_route', _rule_onboarding,    'User is paid and in onboarding phase'),
-    (4,  'payment_route',    'payment_route',    _rule_ready_to_pay,  'User is ready to pay'),
-    (5,  'analysis_route',   'analysis_route',   _rule_analysis,      'User uploading/discussing analysis'),
+    # Priority 3: analysis upload — explicit action, specific routing
+    (3,  'analysis_route',   'analysis_route',   _rule_analysis,      'User uploading/discussing analysis'),
+    # Priority 4: onboarding for paid users
+    (4,  'onboarding_route', 'onboarding_route', _rule_onboarding,    'User is paid and in onboarding phase'),
+    # Priority 5: payment intent
+    (5,  'payment_route',    'payment_route',    _rule_ready_to_pay,  'User is ready to pay'),
+    # Priority 6: paid user waiting — needs support
     (6,  'support_route',    'support_route',    _rule_waiting_paid,  'Paid user in waiting — needs support'),
+    # Priority 7: stuck / no progress
     (7,  'recovery_route',   'recovery_route',   _rule_stuck,         'User is stuck / no progress detected'),
+    # Priority 8: general support
     (8,  'support_route',    'support_route',    _rule_support,       'User needs support/help'),
+    # Priority 9: doubt/confusion
     (9,  'faq_route',        'faq_route',        _rule_doubt_confused,'User has doubts/confusion'),
+    # Priority 10: new user with question
     (10, 'reception',        'reception',        _rule_new_question,  'New user asking questions'),
 ]
 
