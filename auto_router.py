@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-# Central AI Core v2.0 — Layer 4: Soft Auto-Routing Phase 2A
+# Central AI Core v2.0 — Layer 4: Soft Auto-Routing Phase 2B
 # Module: auto_router.py
 # Purpose: Apply SAFE automatic route switches based on Route Resolver recommendations.
-#          Phase 2A adds support_route with Support Transition Protection guards.
+#          Phase 2B adds faq_route with FAQ Persistence Protection guards.
 #          Observation layer (proposed_route) continues to run in parallel.
 #          Unsafe routes (trust_route, fear-based rerouting) are NOT enabled.
 # Protection:
@@ -10,6 +10,8 @@
 #   - rollback protection: max 1 switch per 3 messages
 #   - Guard 4: analysis_route -> support_route blocked if msgs_since_last_switch < 2
 #   - Guard 5: onboarding_route -> support_route blocked if analysis_upload pending
+#   - Guard 6: faq_route blocked if current_state == 'choosing' OR intent == 'ready_to_pay'
+#   - Guard 7: faq_route blocked if current_route == onboarding_route AND payment_status == 'paid'
 # Connected in: agents.py -> process_message() after resolve_route()
 
 import logging
@@ -20,10 +22,11 @@ from typing import Dict, Any, Optional
 log = logging.getLogger('auto_router')
 
 # ---------------------------------------------------------------------------
-# SAFE ROUTES — PHASE 2A
+# SAFE ROUTES — PHASE 2B
 # Phase 1: escalation_route, onboarding_route, analysis_route, recovery_route, payment_route
-# Phase 2A adds: support_route  (with Support Transition Protection guards)
-# trust_route, faq_route, fear-based rerouting NOT yet included.
+# Phase 2A: + support_route  (with Support Transition Protection)
+# Phase 2B: + faq_route      (with FAQ Persistence Protection)
+# trust_route, fear-based rerouting NOT yet included (Phase 2C).
 # ---------------------------------------------------------------------------
 _SAFE_ROUTES = {
     'escalation_route',   # escalation_request intent → Karen
@@ -32,6 +35,7 @@ _SAFE_ROUTES = {
     'recovery_route',     # stuck state / hang_stage → Nadia
     'payment_route',      # ready_to_pay intent/state → Maya
     'support_route',      # Phase 2A: emotional support / waiting paid → Gabriel
+    'faq_route',          # Phase 2B: doubt/confusion → Sarah
 }
 
 # ---------------------------------------------------------------------------
@@ -45,11 +49,18 @@ _MIN_CONFIDENCE: float = 0.85
 _SWITCH_COOLDOWN_MSGS: int = 3
 
 # ---------------------------------------------------------------------------
-# SUPPORT TRANSITION PROTECTION
+# SUPPORT TRANSITION PROTECTION (Phase 2A)
 # Guard 4: block analysis_route → support_route too soon
 # Guard 5: block onboarding_route → support_route when analysis_upload is pending
 # ---------------------------------------------------------------------------
-_SUPPORT_ANALYSIS_MIN_MSGS: int = 2   # Guard 4: min messages since last switch when from=analysis
+_SUPPORT_ANALYSIS_MIN_MSGS: int = 2   # Guard 4: min msgs since last switch when from=analysis
+
+# ---------------------------------------------------------------------------
+# FAQ PERSISTENCE PROTECTION (Phase 2B)
+# Guard 6: payment_route priority over faq when choosing/ready_to_pay
+# Guard 7: block faq during paid onboarding flow
+# ---------------------------------------------------------------------------
+# (no extra constants needed — conditions use session/intent/state directly)
 
 # ---------------------------------------------------------------------------
 # ROUTE → AGENT MAP
@@ -121,6 +132,7 @@ def apply_auto_route(
     history_len     = len(session.get('history', []))
     last_switch_msg = session.get('route_last_switch_msg', 0)
     msgs_since_last = history_len - last_switch_msg
+    payment_status  = session.get('payment_status', 'new')
 
     # ── Guard 0: no-op if proposed == current ─────────────────────────
     if proposed_route == current_route:
@@ -172,11 +184,37 @@ def apply_auto_route(
     # ── Guard 5: Support Transition Protection — onboarding flow guard ─
     # Block: onboarding_route → support_route when analysis_upload is the
     # active intent (analysis_route would have higher confidence than support_route).
-    # This prevents support from intercepting an analysis hand-off during onboarding.
     if proposed_route == 'support_route' and current_route == 'onboarding_route':
         if intent == 'analysis_upload':
             block = 'support_hijack_guard:analysis_upload_pending_in_onboarding'
             log.info('[AUTO-ROUTE] BLOCKED contact=%s GUARD5 onboarding->support analysis_upload_pending',
+                     contact_id)
+            entry = _build_log_entry(contact_id, current_route, proposed_route, route_reason,
+                                     route_confidence, intent, state, history_len, False, block)
+            return {'switched': False, 'new_route': current_route, 'block_reason': block, 'log_entry': entry}
+
+    # ── Guard 6: FAQ Persistence Protection — payment priority ─────────
+    # Block: * → faq_route if user is in choosing/ready_to_pay context.
+    # Payment flow has higher priority than FAQ — do not let doubt/confusion
+    # reroute a user who is actively considering payment.
+    if proposed_route == 'faq_route':
+        if state == 'choosing' or intent == 'ready_to_pay':
+            block = (f'faq_payment_priority_guard:payment_context_active:'
+                     f'state={state},intent={intent}')
+            log.info('[AUTO-ROUTE] BLOCKED contact=%s GUARD6 faq blocked by payment context '
+                     'state=%s intent=%s', contact_id, state, intent)
+            entry = _build_log_entry(contact_id, current_route, proposed_route, route_reason,
+                                     route_confidence, intent, state, history_len, False, block)
+            return {'switched': False, 'new_route': current_route, 'block_reason': block, 'log_entry': entry}
+
+    # ── Guard 7: FAQ Hijack Protection — paid onboarding guard ────────
+    # Block: onboarding_route → faq_route when user is paid.
+    # A paid user in onboarding must not be diverted to FAQ — they need
+    # structured onboarding, not a Q&A detour.
+    if proposed_route == 'faq_route' and current_route == 'onboarding_route':
+        if payment_status == 'paid':
+            block = 'faq_hijack_guard:paid_user_in_onboarding_flow'
+            log.info('[AUTO-ROUTE] BLOCKED contact=%s GUARD7 faq blocked: paid onboarding active',
                      contact_id)
             entry = _build_log_entry(contact_id, current_route, proposed_route, route_reason,
                                      route_confidence, intent, state, history_len, False, block)
