@@ -11,6 +11,7 @@ import httpx
 from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
 from route_resolver import resolve_route
+from auto_router import apply_auto_route
 import threading
 import time
 
@@ -183,7 +184,8 @@ def load_session(contact_id):
             'SELECT route, history, case_summary, awaiting_confirmation, '
             'agent_current, risk_score, hang_stage, payment_status, '
             'current_intent, current_state, '
-            'proposed_route, proposed_agent, route_confidence, route_reason '
+            'proposed_route, proposed_agent, route_confidence, route_reason, '
+            'previous_route, transition_reason, route_transition_log, route_last_switch_msg '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -206,6 +208,10 @@ def load_session(contact_id):
                 'proposed_agent':   row.get('proposed_agent', row['route']),
                 'route_confidence': float(row.get('route_confidence') or 0.0),
                 'route_reason':     row.get('route_reason', ''),
+                'previous_route':        row.get('previous_route', row['route']),
+                'transition_reason':     row.get('transition_reason', ''),
+                'route_transition_log':  row.get('route_transition_log') or [],
+                'route_last_switch_msg': int(row.get('route_last_switch_msg') or 0),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -221,8 +227,9 @@ def save_session(contact_id, session):
             '(contact_id, route, history, case_summary, awaiting_confirmation, last_contact, '
             'agent_current, risk_score, hang_stage, payment_status, '
             'current_intent, current_state, '
-            'proposed_route, proposed_agent, route_confidence, route_reason) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) '
+            'proposed_route, proposed_agent, route_confidence, route_reason, '
+            'previous_route, transition_reason, route_transition_log, route_last_switch_msg) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -238,7 +245,11 @@ def save_session(contact_id, session):
             '    proposed_route   = EXCLUDED.proposed_route, '
             '    proposed_agent   = EXCLUDED.proposed_agent, '
             '    route_confidence = EXCLUDED.route_confidence, '
-            '    route_reason     = EXCLUDED.route_reason',
+            '    route_reason     = EXCLUDED.route_reason, '
+            '    previous_route       = EXCLUDED.previous_route, '
+            '    transition_reason    = EXCLUDED.transition_reason, '
+            '    route_transition_log = EXCLUDED.route_transition_log, '
+            '    route_last_switch_msg = EXCLUDED.route_last_switch_msg',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -255,6 +266,10 @@ def save_session(contact_id, session):
                 session.get('proposed_agent', session.get('route', 'reception')),
                 float(session.get('route_confidence', 0.0)),
                 session.get('route_reason', ''),
+                session.get('previous_route', session.get('route', 'reception')),
+                session.get('transition_reason', ''),
+                json.dumps(session.get('route_transition_log', []), ensure_ascii=False),
+                int(session.get('route_last_switch_msg', 0)),
             )
         )
         conn.commit()
@@ -549,6 +564,43 @@ def process_message(contact_id, user_message):
         session.setdefault('proposed_agent', session.get('route', 'reception'))
         session.setdefault('route_confidence', 0.0)
         session.setdefault('route_reason', 'resolver_error')
+    # ─────────────────────────────────────────────────────────────────────
+
+    # ── Auto-Router v4.0 (Soft Phase 1) ──────────────────────────────────
+    try:
+        ar = apply_auto_route(
+            contact_id      = contact_id,
+            session         = session,
+            proposed_route  = session.get('proposed_route', session.get('route', 'reception')),
+            route_confidence= session.get('route_confidence', 0.0),
+            route_reason    = session.get('route_reason', ''),
+            intent          = session.get('current_intent', 'question'),
+            state           = session.get('current_state', 'new'),
+        )
+        if ar.get('switched'):
+            # Apply the switch — update route and agent
+            session['previous_route']    = ar['previous_route']
+            session['route']             = ar['new_route']
+            session['agent_current']     = ar.get('new_agent', ar['new_route'])
+            session['transition_reason'] = ar.get('log_entry', {}).get('reason', '')
+            # Append to transition log (keep last 20 entries)
+            tlog = session.get('route_transition_log', [])
+            tlog.append(ar.get('log_entry', {}))
+            session['route_transition_log'] = tlog[-20:]
+            # Update switch counter for rollback protection
+            session['route_last_switch_msg'] = len(session.get('history', []))
+        else:
+            session.setdefault('previous_route', session.get('route', 'reception'))
+            session.setdefault('transition_reason', '')
+            session.setdefault('route_transition_log', [])
+            session.setdefault('route_last_switch_msg', 0)
+    except Exception as _ar_err:
+        import logging as _ar_log
+        _ar_log.getLogger('auto_router').warning('[AUTO-ROUTE] error: %s', _ar_err)
+        session.setdefault('previous_route', session.get('route', 'reception'))
+        session.setdefault('transition_reason', '')
+        session.setdefault('route_transition_log', [])
+        session.setdefault('route_last_switch_msg', 0)
     # ─────────────────────────────────────────────────────────────────────
 
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
