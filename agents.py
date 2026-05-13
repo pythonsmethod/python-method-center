@@ -169,6 +169,19 @@ def _init_db():
             # State Engine v2.0 columns
             "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS current_intent TEXT NOT NULL DEFAULT 'question'",
             "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS current_state TEXT NOT NULL DEFAULT 'new'",
+            # Auto-router + overlay + trust columns (Phase 2B/2C)
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS proposed_route TEXT NOT NULL DEFAULT 'reception'",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS proposed_agent TEXT NOT NULL DEFAULT 'reception'",
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS route_confidence FLOAT NOT NULL DEFAULT 0.0',
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS route_reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS previous_route TEXT NOT NULL DEFAULT 'reception'",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS transition_reason TEXT NOT NULL DEFAULT ''",
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS route_transition_log JSONB',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS route_last_switch_msg INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS overlay_last_high_msg INTEGER',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS overlay_consecutive_empathy INTEGER',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS overlay_history JSONB',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS trust_entered_at_msg INTEGER NOT NULL DEFAULT 0',
         ]:
             try:
                 cur.execute(col_sql)
@@ -196,7 +209,8 @@ def load_session(contact_id):
             'current_intent, current_state, '
             'proposed_route, proposed_agent, route_confidence, route_reason, '
             'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
-            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history '
+            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, '
+            'trust_entered_at_msg '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -226,6 +240,7 @@ def load_session(contact_id):
                 'overlay_last_high_msg':       int(row.get('overlay_last_high_msg') or 0),
                 'overlay_consecutive_empathy': int(row.get('overlay_consecutive_empathy') or 0),
                 'overlay_history':             row.get('overlay_history') or [],
+                'trust_entered_at_msg':         int(row.get('trust_entered_at_msg') or 0),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -243,8 +258,8 @@ def save_session(contact_id, session):
             'current_intent, current_state, '
             'proposed_route, proposed_agent, route_confidence, route_reason, '
             'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
-            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb) '
+            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, trust_entered_at_msg) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -267,7 +282,8 @@ def save_session(contact_id, session):
             '    route_last_switch_msg = EXCLUDED.route_last_switch_msg, '
             '    overlay_last_high_msg = EXCLUDED.overlay_last_high_msg, '
             '    overlay_consecutive_empathy = EXCLUDED.overlay_consecutive_empathy, '
-            '    overlay_history = EXCLUDED.overlay_history',
+            '    overlay_history = EXCLUDED.overlay_history, '
+            '    trust_entered_at_msg = EXCLUDED.trust_entered_at_msg',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -291,6 +307,7 @@ def save_session(contact_id, session):
                 int(session.get('overlay_last_high_msg', 0)),
                 int(session.get('overlay_consecutive_empathy', 0)),
                 json.dumps(session.get('overlay_history', []), ensure_ascii=False),
+                int(session.get('trust_entered_at_msg', 0)),
             )
         )
         conn.commit()
