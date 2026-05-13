@@ -789,6 +789,50 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
+        # Task 5.5 — Adaptive Behaviour Engine (LOWEST priority — runs after policy, before dispatch)
+        # Evaluates user behavioural profile and generates adaptation recommendations.
+        # NEVER sends messages. Central Orchestrator remains final authority.
+        async def behaviour_task():
+            try:
+                from adaptive_behaviour_engine import get_behaviour_engine
+                engine = get_behaviour_engine()
+                if not engine:
+                    return
+                # Build minimal context from available data
+                user_ctx = {
+                    "user_id": user_id,
+                    "current_stage": orch_ctx.get("current_stage", "unknown"),
+                    "silence_respect": orch_ctx.get("silence_respect", False),
+                    "explicit_refusal": orch_ctx.get("explicit_refusal", False),
+                    "human_escalation_required": orch_ctx.get("human_escalation_required", False),
+                    "route_lock": orch_ctx.get("route_lock", False),
+                    "trust_lock": orch_ctx.get("trust_lock", False),
+                    "cooldown_active": orch_ctx.get("cooldown_active", False),
+                    "ai_message_count": orch_ctx.get("ai_message_count", 0),
+                    "user_message_count": orch_ctx.get("user_message_count", 0),
+                }
+                memory_st = orch_ctx.get("memory_state", {})
+                risk_prof  = orch_ctx.get("risk_profile", {})
+                history    = orch_ctx.get("interaction_history", [])
+                profile = await engine.evaluate_behaviour_profile(
+                    user_ctx, memory_st, risk_prof, history
+                )
+                log.debug(
+                    "[PIPELINE_BG] Behaviour profile: user=%s classification=%s volatility=%.2f",
+                    user_id,
+                    profile.classification.value,
+                    profile.volatility_score,
+                )
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Behaviour task error (non-fatal): %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="behaviour_eval",
+            user_id=user_id,
+            coro_factory=behaviour_task,
+            priority=TaskPriority.LOW
+        )
+
         # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
