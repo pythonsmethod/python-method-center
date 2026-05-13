@@ -12,6 +12,16 @@ from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
 from route_resolver import resolve_route
 from auto_router import apply_auto_route
+from emotional_overlay import (
+    detect_emotional_overlay,
+    build_overlay_injection,
+    update_overlay_session,
+)
+from emotional_overlay import (
+    detect_emotional_overlay,
+    build_overlay_injection,
+    update_overlay_session,
+)
 import threading
 import time
 
@@ -185,7 +195,8 @@ def load_session(contact_id):
             'agent_current, risk_score, hang_stage, payment_status, '
             'current_intent, current_state, '
             'proposed_route, proposed_agent, route_confidence, route_reason, '
-            'previous_route, transition_reason, route_transition_log, route_last_switch_msg '
+            'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
+            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -212,6 +223,9 @@ def load_session(contact_id):
                 'transition_reason':     row.get('transition_reason', ''),
                 'route_transition_log':  row.get('route_transition_log') or [],
                 'route_last_switch_msg': int(row.get('route_last_switch_msg') or 0),
+                'overlay_last_high_msg':       int(row.get('overlay_last_high_msg') or 0),
+                'overlay_consecutive_empathy': int(row.get('overlay_consecutive_empathy') or 0),
+                'overlay_history':             row.get('overlay_history') or [],
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
@@ -228,8 +242,9 @@ def save_session(contact_id, session):
             'agent_current, risk_score, hang_stage, payment_status, '
             'current_intent, current_state, '
             'proposed_route, proposed_agent, route_confidence, route_reason, '
-            'previous_route, transition_reason, route_transition_log, route_last_switch_msg) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s) '
+            'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
+            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -249,7 +264,10 @@ def save_session(contact_id, session):
             '    previous_route       = EXCLUDED.previous_route, '
             '    transition_reason    = EXCLUDED.transition_reason, '
             '    route_transition_log = EXCLUDED.route_transition_log, '
-            '    route_last_switch_msg = EXCLUDED.route_last_switch_msg',
+            '    route_last_switch_msg = EXCLUDED.route_last_switch_msg, '
+            '    overlay_last_high_msg = EXCLUDED.overlay_last_high_msg, '
+            '    overlay_consecutive_empathy = EXCLUDED.overlay_consecutive_empathy, '
+            '    overlay_history = EXCLUDED.overlay_history',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -270,6 +288,9 @@ def save_session(contact_id, session):
                 session.get('transition_reason', ''),
                 json.dumps(session.get('route_transition_log', []), ensure_ascii=False),
                 int(session.get('route_last_switch_msg', 0)),
+                int(session.get('overlay_last_high_msg', 0)),
+                int(session.get('overlay_consecutive_empathy', 0)),
+                json.dumps(session.get('overlay_history', []), ensure_ascii=False),
             )
         )
         conn.commit()
@@ -603,6 +624,33 @@ def process_message(contact_id, user_message):
         session.setdefault('route_last_switch_msg', 0)
     # ─────────────────────────────────────────────────────────────────────
 
+    # ── Layer 5: Emotional Overlay Engine ────────────────────────────────
+    try:
+        _overlay = detect_emotional_overlay(
+            intent            = session.get('current_intent', 'question'),
+            state             = session.get('current_state', 'new'),
+            risk_score        = float(session.get('risk_score', 0.0)),
+            current_route     = session.get('route', 'reception'),
+            session           = session,
+            last_user_message = user_message,
+        )
+        import logging as _ov_log
+        _ov_log.getLogger('emotional_overlay').info(
+            '[OVERLAY] type=%s conf=%.2f route=%s agent=%s blocked=%s reason=%s',
+            _overlay['overlay_type'],
+            _overlay['overlay_confidence'],
+            session.get('route', 'reception'),
+            session.get('agent_current', ''),
+            not _overlay['should_inject'],
+            _overlay.get('block_reason') or '',
+        )
+    except Exception as _ov_err:
+        import logging as _ov_err_log
+        _ov_err_log.getLogger('emotional_overlay').warning('[OVERLAY] error: %s', _ov_err)
+        _overlay = {'should_inject': False, 'overlay_type': 'none', 'overlay_confidence': 0.0,
+                    'prompt_prefix': '', 'block_reason': 'overlay_error'}
+    # ─────────────────────────────────────────────────────────────────────
+
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
     if session.get('awaiting_confirmation'):
         session['history'].append({'role': 'user', 'content': user_message})
@@ -612,6 +660,20 @@ def process_message(contact_id, user_message):
 
     current_route = session['route']
     prompt = AGENT_PROMPTS.get(current_route, LUCKY_PROMPT)
+
+    # ── Layer 5: Apply overlay prefix to agent system prompt ─────────────
+    try:
+        _overlay_prefix = build_overlay_injection(
+            overlay_package = _overlay,
+            agent_name      = session.get('agent_current', current_route),
+            current_route   = current_route,
+        )
+        if _overlay_prefix:
+            prompt = _overlay_prefix + '\n\n' + prompt
+    except Exception as _ov_inj_err:
+        import logging as _ov_inj_log
+        _ov_inj_log.getLogger('emotional_overlay').warning('[OVERLAY INJECT] error: %s', _ov_inj_err)
+    # ─────────────────────────────────────────────────────────────────────
 
     try:
         reply = ask_claude(
@@ -626,6 +688,14 @@ def process_message(contact_id, user_message):
         return 'Что-то на стороне системы. Напишите, пожалуйста, ещё раз через минуту.'
 
     session['history'].append({'role': 'assistant', 'content': reply})
+
+    # ── Layer 5: Update overlay session tracking ──────────────────────────
+    try:
+        update_overlay_session(session, _overlay)
+    except Exception as _ov_upd_err:
+        import logging as _ov_upd_log
+        _ov_upd_log.getLogger('emotional_overlay').warning('[OVERLAY UPDATE] error: %s', _ov_upd_err)
+    # ─────────────────────────────────────────────────────────────────────
 
     # КРИЗИС: детектируем тревожные сигналы в сообщении пользователя
     crisis_keywords = ['суицид', 'убить себя', 'причинить себе', 'нет смысла жить', 'хочу умереть', 'покончить', 'не хочу жить', 'жить не хочу', 'вред себе', 'жизнь не нужна']
