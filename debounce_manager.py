@@ -140,7 +140,7 @@ class DebounceManager:
             for idx, m in enumerate(messages, start=1):
                 if m.text.strip():
                     parts.append(f"[message_{idx}]:\n{m.text.strip()}")
-                        merged_text = "\n\n".join(parts)
+            merged_text = "\n\n".join(parts)
             logger.info("[DEBOUNCE] Merged %d messages for user %s into batch format",
                         len(messages), user_id)
 
