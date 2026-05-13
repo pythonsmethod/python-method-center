@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Python Method Center - main server
 # FastAPI + SendPulse + Claude AI Agents + Stripe. Deploy: Railway.
+import asyncio
 import os
 import logging
 import stripe
