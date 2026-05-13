@@ -715,6 +715,24 @@ class MessagePipelineManager:
                 priority=TaskPriority.HIGH
             )
 
+        # Task 3: Risk prediction (async, non-blocking, does not affect response)
+        async def risk_task():
+            try:
+                from risk_predictor import get_risk_predictor
+                predictor = get_risk_predictor()
+                if predictor:
+                    await predictor.predict_for_user(user_id)
+                    log.debug("[PIPELINE_BG] Risk prediction done user=%s", user_id)
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Risk prediction error: %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="risk_prediction",
+            user_id=user_id,
+            coro_factory=risk_task,
+            priority=TaskPriority.LOW
+        )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return pipeline health stats."""
         return {
