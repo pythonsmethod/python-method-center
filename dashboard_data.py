@@ -430,6 +430,109 @@ class DashboardData:
             return []
 
 
+    # -----------------------------------------------------------------------
+    # 11. Risk Intelligence (Phase 3.2)
+    # -----------------------------------------------------------------------
+
+    async def get_risk_intelligence(self) -> Dict[str, Any]:
+        """Full risk dashboard: high-risk clients, by type, by route, trends, unresolved."""
+        from risk_predictor import get_risk_predictor
+        predictor = get_risk_predictor()
+        if not predictor or not self._pool:
+            return {"error": "risk_predictor not initialized"}
+        try:
+            high_risk   = await predictor.get_high_risk_clients(limit=50)
+            by_type     = await predictor.get_risk_by_type()
+            unresolved  = await predictor.get_unresolved_risks()
+            by_route    = await self._get_risk_by_route()
+            by_stage    = await self._get_risk_by_stage()
+            trends      = await self._get_risk_trends()
+            critical    = [r for r in unresolved if r.get("risk_level") in ("high","critical")]
+            return {
+                "high_risk_clients":    high_risk,
+                "risk_by_type":         by_type,
+                "risk_by_route":        by_route,
+                "risk_by_stage":        by_stage,
+                "risk_trends":          trends,
+                "unresolved_risks":     unresolved,
+                "critical_escalations": critical,
+                "summary": {
+                    "total_unresolved":  len(unresolved),
+                    "total_critical":    len(critical),
+                    "total_high_risk":   len(high_risk),
+                },
+            }
+        except Exception as e:
+            log.error("[DASHBOARD] get_risk_intelligence error: %s", e)
+            return {"error": str(e)}
+
+    async def _get_risk_by_route(self) -> List[Dict]:
+        """Risk aggregated by last known route."""
+        if not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT
+                         cp.current_stage AS route,
+                         rp.risk_level,
+                         COUNT(*) AS count,
+                         AVG(rp.current_risk_score) AS avg_score
+                       FROM pm_risk_predictions rp
+                       LEFT JOIN pm_client_profiles cp ON cp.user_id = rp.user_id
+                       WHERE rp.resolved_at IS NULL
+                       GROUP BY cp.current_stage, rp.risk_level
+                       ORDER BY count DESC"""
+                )
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error("[DASHBOARD] _get_risk_by_route error: %s", e)
+            return []
+
+    async def _get_risk_by_stage(self) -> List[Dict]:
+        """Risk aggregated by client onboarding stage."""
+        if not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT
+                         COALESCE(cp.current_stage, 'unknown') AS stage,
+                         COUNT(*) AS total_risks,
+                         COUNT(*) FILTER (WHERE rp.risk_level IN ('high','critical')) AS high_count,
+                         AVG(rp.current_risk_score) AS avg_score
+                       FROM pm_risk_predictions rp
+                       LEFT JOIN pm_client_profiles cp ON cp.user_id = rp.user_id
+                       WHERE rp.resolved_at IS NULL
+                       GROUP BY cp.current_stage
+                       ORDER BY high_count DESC"""
+                )
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error("[DASHBOARD] _get_risk_by_stage error: %s", e)
+            return []
+
+    async def _get_risk_trends(self, days: int = 7) -> List[Dict]:
+        """Risk counts per day for the last N days."""
+        if not self._pool:
+            return []
+        try:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT
+                         DATE_TRUNC('day', created_at) AS day,
+                         risk_level,
+                         COUNT(*) AS count
+                       FROM pm_risk_predictions
+                       WHERE created_at >= NOW() - INTERVAL '7 days'
+                       GROUP BY day, risk_level
+                       ORDER BY day DESC, risk_level"""
+                )
+            return [dict(r) for r in rows]
+        except Exception as e:
+            log.error("[DASHBOARD] _get_risk_trends error: %s", e)
+            return []
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
