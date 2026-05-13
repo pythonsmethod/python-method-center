@@ -404,9 +404,13 @@ async def _init_dispatcher():
 async def _init_scanner():
     """Initialise SilentUserScanner singleton with DB pool. Fail-safe."""
     try:
+        import asyncpg
         from silent_user_scanner import init_scanner
-        from agents import get_db_pool
-        pool = get_db_pool()
+        db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not db_url:
+            log.warning("[SCANNER] _init_scanner: no DATABASE_URL — skipped")
+            return
+        pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3, command_timeout=30)
         scanner = init_scanner(db_pool=pool)
         log.info("[SCANNER] SilentUserScanner initialized in main")
     except Exception as e:
