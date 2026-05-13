@@ -769,6 +769,26 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
+        # Task 5: Proactive dispatcher — send approved recovery messages (background only)
+        async def dispatcher_task():
+            try:
+                from proactive_message_dispatcher import get_dispatcher
+                dispatcher = get_dispatcher()
+                if dispatcher:
+                    sent = await dispatcher.dispatch_allowed_recovery_messages()
+                    if sent > 0:
+                        log.info("[PIPELINE_BG] Dispatcher sent %d message(s) user=%s",
+                                 sent, user_id)
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Dispatcher task error (non-fatal): %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="proactive_dispatch",
+            user_id=user_id,
+            coro_factory=dispatcher_task,
+            priority=TaskPriority.LOW
+        )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return pipeline health stats."""
         return {
