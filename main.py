@@ -401,6 +401,18 @@ async def _init_dispatcher():
         log.warning("[PIPELINE] ProactiveMessageDispatcher init failed (non-fatal): %s", e)
 
 
+async def _init_scanner():
+    """Initialise SilentUserScanner singleton with DB pool. Fail-safe."""
+    try:
+        from silent_user_scanner import init_scanner
+        from agents import get_db_pool
+        pool = get_db_pool()
+        scanner = init_scanner(db_pool=pool)
+        log.info("[SCANNER] SilentUserScanner initialized in main")
+    except Exception as e:
+        log.warning("[SCANNER] _init_scanner failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -415,6 +427,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_risk_predictor_with_retry())
         asyncio.create_task(_init_policy_engine())
         asyncio.create_task(_init_dispatcher())
+        asyncio.create_task(_init_scanner())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
