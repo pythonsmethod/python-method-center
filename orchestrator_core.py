@@ -789,6 +789,23 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
+        # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
+        async def scanner_task():
+            try:
+                from silent_user_scanner import get_scanner
+                scanner = get_scanner()
+                if scanner:
+                    await scanner.run_scan()
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Scanner task error (non-fatal): %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="silent_scan",
+            user_id=user_id,
+            coro_factory=scanner_task,
+            priority=TaskPriority.LOW
+        )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return pipeline health stats."""
         return {
