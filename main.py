@@ -364,6 +364,24 @@ async def _init_risk_predictor_with_retry():
         log.warning("[PIPELINE] RiskPredictor init failed (non-fatal): %s", e)
 
 
+async def _init_policy_engine():
+    """Initialize RecoveryPolicyEngine with its own async DB pool. Non-fatal if fails."""
+    try:
+        import asyncpg
+        DATABASE_URL = os.environ.get("DATABASE_URL", "")
+        if not DATABASE_URL:
+            log.warning("[PIPELINE] DATABASE_URL not set — RecoveryPolicyEngine skipped")
+            return
+        pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=1, max_size=2, command_timeout=30
+        )
+        from recovery_policy_engine import init_recovery_policy_engine
+        init_recovery_policy_engine(db_pool=pool)
+        log.info("[PIPELINE] RecoveryPolicyEngine initialized successfully")
+    except Exception as e:
+        log.warning("[PIPELINE] RecoveryPolicyEngine init failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -376,6 +394,7 @@ async def _start_pipeline_workers():
         log.info("[PIPELINE] AsyncTaskWorker started")
         # Init RiskPredictor with retry — pool may not be ready immediately at startup
         asyncio.create_task(_init_risk_predictor_with_retry())
+        asyncio.create_task(_init_policy_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
