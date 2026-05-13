@@ -42,7 +42,7 @@ _SAFE_ROUTES = {
     'payment_route',      # ready_to_pay intent/state → Maya
     'support_route',      # Phase 2A: emotional support / waiting paid → Gabriel
     'faq_route',          # Phase 2B: doubt/confusion → Sarah
-    # 'trust_route',      # Phase 2C: NOT ACTIVE — enable after governance validation
+    'trust_route',          # Phase 2C: ACTIVE — trust rebuilding / Sophia agent
 }
 
 # ---------------------------------------------------------------------------
