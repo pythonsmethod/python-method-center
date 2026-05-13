@@ -106,6 +106,8 @@ class RuntimeSupervisor:
         self._running = True
         self._monitoring_task = asyncio.create_task(self._monitoring_loop())
         log.info("[SUPERVISOR] monitoring started")
+        # Start silent user scanner (30-min scheduled scan)
+        asyncio.create_task(self._start_silent_scanner_safe())
 
     async def stop(self) -> None:
         self._running = False
@@ -274,6 +276,26 @@ class RuntimeSupervisor:
         if subsystem not in self._health:
             self._health[subsystem] = SubsystemHealth(name=subsystem)
         return self._health[subsystem]
+
+
+    async def _start_silent_scanner_safe(self) -> None:
+        """
+        Start the SilentUserScanner 30-minute scheduled loop.
+        Safe singleton: if scanner not available, log and skip.
+        If scanner fails, RuntimeSupervisor continues normally.
+        """
+        try:
+            from silent_user_scanner import get_scanner
+            scanner = get_scanner()
+            if scanner:
+                await scanner.start_scheduled_loop(interval_minutes=30)
+                log.info("[SUPERVISOR] SilentUserScanner loop started")
+            else:
+                log.debug("[SUPERVISOR] SilentUserScanner not initialized — skipping scan loop")
+        except ImportError:
+            log.debug("[SUPERVISOR] silent_user_scanner not available — skipping")
+        except Exception as e:
+            log.error("[SUPERVISOR] _start_silent_scanner_safe error: %s", e, exc_info=True)
 
 
 _supervisor: Optional[RuntimeSupervisor] = None
