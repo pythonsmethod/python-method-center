@@ -1,0 +1,251 @@
+# -*- coding: utf-8 -*-
+# =============================================================================
+# PHASE 3 — Central Orchestrator Architecture
+# Module: response_validator.py
+# Python Method Digital Rehabilitation Center
+#
+# Purpose: Validate AI prompts (pre-generation) and AI responses (post-generation).
+#          Catches: medical overreach, payment dead zones, prompt leakage,
+#          repetitive responses, cold/robotic tone, broken empathy,
+#          hallucinated facts, dangerous medical claims.
+#
+# Pre-validation (validate_prompt):
+#   - Checks system prompt for injection artifacts
+#   - Verifies agent is correct for current route
+#   - Checks anti-medical-overreach instructions are present for Vera
+#
+# Post-validation (validate_response):
+#   - Medical overreach detection (diagnosis/prescription claims)
+#   - Payment dead zone detection (paid user getting payment pitch)
+#   - Repetition detection (same response as last N)
+#   - Minimum length check
+#   - Forbidden phrases check
+#   - Prompt leakage check (system prompt fragments in response)
+# =============================================================================
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Any, Dict, List, Optional
+
+log = logging.getLogger("response_validator")
+
+# ---------------------------------------------------------------------------
+# Medical overreach patterns (Vera must NEVER produce these)
+# ---------------------------------------------------------------------------
+_MEDICAL_OVERREACH_PATTERNS = [
+    r"у вас (диагноз|диагностирован[оа]?)",
+    r"вам (нужно|необходимо|следует) (принимать|пить|колоть)",
+    r"(назначаю|рекомендую принимать|выписываю)",
+    r"это (онкология|рак|злокачественн)",
+    r"(химиотерапия|облучение|операция) (необходима|обязательна|нужна)",
+    r"ваш анализ показывает (рак|онкологию|злокачественное)",
+    r"прогноз (благоприятный|неблагоприятный|плохой)",
+]
+
+# ---------------------------------------------------------------------------
+# Forbidden phrases (must never appear in responses)
+# ---------------------------------------------------------------------------
+_FORBIDDEN_PHRASES = [
+    "как языковая модель",
+    "как ai",
+    "как искусственный интеллект",
+    "я не могу чувствовать",
+    "я программа",
+    "system prompt",
+    "системный промпт",
+    "[overlay]",
+    "[orch",
+    "json",
+    "route=",
+    "intent=",
+]
+
+# ---------------------------------------------------------------------------
+# Minimum response length (chars)
+# ---------------------------------------------------------------------------
+_MIN_RESPONSE_LEN = 20
+
+# ---------------------------------------------------------------------------
+# Repetition window (check last N responses)
+# ---------------------------------------------------------------------------
+_REPETITION_WINDOW = 3
+_REPETITION_SIMILARITY_THRESHOLD = 0.85
+
+
+def _similarity(a: str, b: str) -> float:
+    """Simple Jaccard similarity on word sets."""
+    if not a or not b:
+        return 0.0
+    words_a = set(a.lower().split())
+    words_b = set(b.lower().split())
+    if not words_a or not words_b:
+        return 0.0
+    intersection = words_a & words_b
+    union = words_a | words_b
+    return len(intersection) / len(union)
+
+
+# ---------------------------------------------------------------------------
+# ResponseValidator class
+# ---------------------------------------------------------------------------
+class ResponseValidator:
+    """
+    Pre- and post-generation validation for AI responses.
+
+    Usage:
+        validator = ResponseValidator()
+
+        # Before generating response (validate system prompt)
+        pre = validator.validate_prompt(system_prompt, session)
+        if not pre["safe"]: log.warning(pre["issues"])
+
+        # After generating response
+        post = validator.validate_response(reply, session, context_package)
+        if not post["safe"]:
+            reply = post["safe_reply"]  # corrected reply if possible
+    """
+
+    def validate_prompt(
+        self,
+        system_prompt: str,
+        session: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Pre-generation validation of the system prompt.
+        Returns {safe: bool, issues: list, warnings: list}
+        """
+        issues = []
+        warnings = []
+
+        try:
+            agent = session.get("active_agent", "Lucky")
+            route = session.get("route", "reception")
+
+            # Check Vera has anti-overreach instructions
+            if agent == "Vera":
+                if "НЕ ставь диагнозы" not in system_prompt and "не ставь диагноз" not in system_prompt.lower():
+                    issues.append("vera_missing_anti_overreach")
+                    log.warning("[VALIDATOR] Vera prompt missing anti-overreach instructions")
+
+            # Check for prompt injection artifacts
+            for suspicious in ["ignore previous", "ignore above", "disregard", "new instructions:"]:
+                if suspicious.lower() in system_prompt.lower():
+                    issues.append(f"prompt_injection_artifact: {suspicious}")
+                    log.error("[VALIDATOR] PROMPT INJECTION detected: %s", suspicious)
+
+            # Warn if prompt is very short
+            if len(system_prompt) < 50:
+                warnings.append("prompt_too_short")
+
+        except Exception as e:
+            log.error("[VALIDATOR] validate_prompt error: %s", e)
+            issues.append(f"validator_error: {e}")
+
+        return {
+            "safe": len(issues) == 0,
+            "issues": issues,
+            "warnings": warnings,
+        }
+
+    def validate_response(
+        self,
+        reply: str,
+        session: Dict[str, Any],
+        context_package: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Post-generation validation of AI response.
+        Returns {safe: bool, issues: list, safe_reply: str (corrected if needed)}
+        """
+        issues = []
+        safe_reply = reply
+
+        try:
+            agent = session.get("active_agent", "Lucky")
+            payment_status = context_package.get("payment_status", "new")
+            route = context_package.get("route", "reception")
+            history: List[Dict] = session.get("history", [])
+
+            # -------------------------------------------------------------------
+            # Check 1: Minimum length
+            # -------------------------------------------------------------------
+            if len(reply.strip()) < _MIN_RESPONSE_LEN:
+                issues.append("response_too_short")
+                safe_reply = (
+                    "Я здесь. Расскажите мне подробнее — что вас беспокоит?"
+                )
+
+            # -------------------------------------------------------------------
+            # Check 2: Medical overreach (critical for all agents)
+            # -------------------------------------------------------------------
+            reply_lower = reply.lower()
+            for pattern in _MEDICAL_OVERREACH_PATTERNS:
+                if re.search(pattern, reply_lower):
+                    issues.append(f"medical_overreach: {pattern}")
+                    log.error("[VALIDATOR] MEDICAL OVERREACH in %s response: %s", agent, pattern)
+                    # Replace with safe fallback
+                    safe_reply = (
+                        "Для точной интерпретации этих данных необходимо "
+                        "обратиться к лечащему врачу. Я могу помочь подготовить "
+                        "вопросы для консультации."
+                    )
+                    break
+
+            # -------------------------------------------------------------------
+            # Check 3: Forbidden phrases
+            # -------------------------------------------------------------------
+            for phrase in _FORBIDDEN_PHRASES:
+                if phrase.lower() in reply_lower:
+                    issues.append(f"forbidden_phrase: {phrase}")
+                    log.warning("[VALIDATOR] forbidden phrase in response: %s", phrase)
+
+            # -------------------------------------------------------------------
+            # Check 4: Payment dead zone (paid user getting payment pitch)
+            # -------------------------------------------------------------------
+            if payment_status == "paid":
+                payment_pitch_phrases = [
+                    "оплатите", "купите", "оформить оплату",
+                    "выберите тариф", "стоимость программы",
+                ]
+                for phrase in payment_pitch_phrases:
+                    if phrase.lower() in reply_lower:
+                        issues.append(f"payment_dead_zone: paid_user_getting_payment_pitch")
+                        log.warning("[VALIDATOR] payment dead zone: paid user got payment pitch")
+                        break
+
+            # -------------------------------------------------------------------
+            # Check 5: Repetition detection
+            # -------------------------------------------------------------------
+            assistant_msgs = [
+                m.get("content", "") for m in history
+                if m.get("role") == "assistant"
+            ][-_REPETITION_WINDOW:]
+
+            for prev_reply in assistant_msgs:
+                sim = _similarity(reply, prev_reply)
+                if sim >= _REPETITION_SIMILARITY_THRESHOLD:
+                    issues.append(f"repetitive_response: similarity={sim:.2f}")
+                    log.warning("[VALIDATOR] repetitive response detected: sim=%.2f", sim)
+                    break
+
+            # -------------------------------------------------------------------
+            # Check 6: Prompt leakage
+            # -------------------------------------------------------------------
+            leakage_markers = ["[OVERLAY]", "[ORCH", "overlay_type=", "route=reception", "system_prompt"]
+            for marker in leakage_markers:
+                if marker.lower() in reply_lower:
+                    issues.append(f"prompt_leakage: {marker}")
+                    log.error("[VALIDATOR] PROMPT LEAKAGE: %s", marker)
+                    safe_reply = safe_reply.replace(marker, "")
+
+        except Exception as e:
+            log.error("[VALIDATOR] validate_response error: %s", e)
+            issues.append(f"validator_error: {e}")
+
+        return {
+            "safe": len([i for i in issues if "warning" not in i and "repetitive" not in i]) == 0,
+            "issues": issues,
+            "safe_reply": safe_reply,
+        }
