@@ -347,6 +347,28 @@ def _get_pipeline():
     return _pipeline_instance
 
 
+async def _init_risk_predictor_with_retry(max_attempts: int = 5, delay_s: float = 3.0):
+    """Init risk predictor after startup — retries until DB pool is ready."""
+    import asyncio as _asyncio
+    for attempt in range(1, max_attempts + 1):
+        try:
+            from risk_predictor import init_risk_predictor
+            from memory_engine import get_memory_engine
+            mem = get_memory_engine()
+            pool = mem._pool if mem else None
+            if pool:
+                await init_risk_predictor(pool)
+                log.info("[PIPELINE] RiskPredictor initialized (attempt %d)", attempt)
+                return
+            else:
+                log.debug("[PIPELINE] RiskPredictor: pool not ready, retry %d/%d", attempt, max_attempts)
+                await _asyncio.sleep(delay_s)
+        except Exception as e:
+            log.warning("[PIPELINE] RiskPredictor init error attempt %d: %s", attempt, e)
+            await _asyncio.sleep(delay_s)
+    log.warning("[PIPELINE] RiskPredictor: could not initialize after %d attempts", max_attempts)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -357,18 +379,8 @@ async def _start_pipeline_workers():
         from async_task_worker import async_worker
         await async_worker.start()
         log.info("[PIPELINE] AsyncTaskWorker started")
-        try:
-            from risk_predictor import init_risk_predictor
-            from memory_engine import get_memory_engine
-            mem = get_memory_engine()
-            pool = mem._pool if mem else None
-            if pool:
-                await init_risk_predictor(pool)
-                log.info("[PIPELINE] RiskPredictor initialized")
-            else:
-                log.warning("[PIPELINE] DB pool not ready — RiskPredictor skipped (will retry)")
-        except Exception as e:
-            log.warning("[PIPELINE] RiskPredictor init failed (non-fatal): %s", e)
+        # Init RiskPredictor with retry — pool may not be ready immediately at startup
+        asyncio.create_task(_init_risk_predictor_with_retry())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
