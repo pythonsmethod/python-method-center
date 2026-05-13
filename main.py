@@ -417,6 +417,17 @@ async def _init_scanner():
         log.warning("[SCANNER] _init_scanner failed (non-fatal): %s", e)
 
 
+
+async def _init_behaviour_engine():
+    """Initialise AdaptiveBehaviourEngine singleton. Fail-safe: non-fatal on any error."""
+    try:
+        from adaptive_behaviour_engine import init_behaviour_engine
+        engine = init_behaviour_engine()
+        log.info("[BEHAVIOUR] AdaptiveBehaviourEngine initialized in main")
+    except Exception as e:
+        log.warning("[BEHAVIOUR] _init_behaviour_engine failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -432,6 +443,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_policy_engine())
         asyncio.create_task(_init_dispatcher())
         asyncio.create_task(_init_scanner())
+        asyncio.create_task(_init_behaviour_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
