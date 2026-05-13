@@ -348,26 +348,20 @@ def _get_pipeline():
     return _pipeline_instance
 
 
-async def _init_risk_predictor_with_retry(max_attempts: int = 5, delay_s: float = 3.0):
-    """Init risk predictor after startup — retries until DB pool is ready."""
-    import asyncio as _asyncio
-    for attempt in range(1, max_attempts + 1):
-        try:
-            from risk_predictor import init_risk_predictor
-            from memory_engine import get_memory_engine
-            mem = get_memory_engine()
-            pool = mem._pool if mem else None
-            if pool:
-                await init_risk_predictor(pool)
-                log.info("[PIPELINE] RiskPredictor initialized (attempt %d)", attempt)
-                return
-            else:
-                log.debug("[PIPELINE] RiskPredictor: pool not ready, retry %d/%d", attempt, max_attempts)
-                await _asyncio.sleep(delay_s)
-        except Exception as e:
-            log.warning("[PIPELINE] RiskPredictor init error attempt %d: %s", attempt, e)
-            await _asyncio.sleep(delay_s)
-    log.warning("[PIPELINE] RiskPredictor: could not initialize after %d attempts", max_attempts)
+async def _init_risk_predictor_with_retry():
+    """Init risk predictor using DATABASE_URL — runs after startup workers start."""
+    try:
+        import asyncpg
+        from risk_predictor import init_risk_predictor
+        db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not db_url:
+            log.warning("[PIPELINE] RiskPredictor: no DATABASE_URL found — skipped")
+            return
+        pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3, command_timeout=30)
+        await init_risk_predictor(pool)
+        log.info("[PIPELINE] RiskPredictor initialized successfully")
+    except Exception as e:
+        log.warning("[PIPELINE] RiskPredictor init failed (non-fatal): %s", e)
 
 
 async def _start_pipeline_workers():
