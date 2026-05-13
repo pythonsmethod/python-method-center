@@ -461,3 +461,281 @@ def get_orchestrator() -> OrchestratorCore:
     if _ORCHESTRATOR is None:
         _ORCHESTRATOR = OrchestratorCore()
     return _ORCHESTRATOR
+
+
+# =============================================================================
+# PHASE 3.1A — Message Queue Pipeline Integration
+# Wraps OrchestratorCore with:
+#   message_queue -> debounce -> batch -> orchestrator
+#   -> stale_guard -> send -> async background tasks
+# =============================================================================
+
+from message_queue import UserMessageQueue, QueuedMessage
+from debounce_manager import DebounceManager, MessageBatch, DEBOUNCE_WINDOW
+from fast_path_resolver import fast_path_resolver, FastPathIntent
+from stale_response_guard import StaleResponseGuard, ResponseToken
+from response_speed_manager import ResponseSpeedManager, run_with_timeout, compress_context_for_llm, get_model_tier
+from async_task_worker import AsyncTaskWorker, TaskPriority, submit_memory_write, submit_orch_log
+
+
+class MessagePipelineManager:
+    """
+    Full message processing pipeline with speed & queue management.
+    
+    This is the outermost layer that every incoming Telegram message
+    must pass through before reaching OrchestratorCore.
+    
+    Pipeline:
+    incoming_message
+      -> stale_guard.register_incoming()     [instant, O(1)]
+      -> message_queue.enqueue()             [instant, never blocks]
+      -> debounce_manager.add_message()      [accumulate rapid messages]
+      -> (wait debounce window 1.8s)
+      -> batch ready callback fires
+      -> fast_path_resolver.resolve()        [<100ms, bypass LLM if match]
+      -> stale_guard.issue_token()           [freshness token]
+      -> speed_manager start typing()        [immediate Telegram feedback]
+      -> orchestrator_core.handle_message()  [full pipeline, 3-8s]
+      -> stale_guard.check_fresh(token)      [is response still valid?]
+      -> if fresh: send response to Telegram
+      -> if stale: discard, re-enqueue with latest context
+      -> async_worker: memory_write + orch_log + analytics [background]
+    """
+
+    def __init__(self, bot=None):
+        self.bot = bot
+        self.orchestrator = get_orchestrator()
+        self.message_queue = UserMessageQueue()
+        self.debounce = DebounceManager()
+        self.stale_guard = StaleResponseGuard()
+        self.async_worker = AsyncTaskWorker(max_concurrent=10)
+        self._sequence: Dict[int, int] = {}
+        # Wire debounce -> batch processor
+        self.debounce.register_callback(self._process_batch)
+        # Wire message_queue -> debounce
+        self.message_queue.register_processor(self._queue_to_debounce)
+        log.info("[PIPELINE] MessagePipelineManager initialized")
+
+    async def start(self):
+        """Start background workers."""
+        await self.async_worker.start()
+        log.info("[PIPELINE] Background workers started")
+
+    def set_bot(self, bot):
+        """Set Telegram bot reference (injected at startup)."""
+        self.bot = bot
+
+    async def incoming(self, user_id: int, message_id: int, text: str,
+                       chat_id: int, raw_update: Optional[Dict] = None) -> None:
+        """
+        Entry point for every incoming Telegram message.
+        Returns immediately — processing happens in background.
+        """
+        # Track sequence
+        self._sequence[user_id] = self._sequence.get(user_id, 0) + 1
+        seq = self._sequence[user_id]
+        now = time.monotonic()
+
+        log.info("[PIPELINE] Incoming user=%s seq=%d text=%.40r", user_id, seq, text)
+
+        # Register with stale guard immediately
+        self.stale_guard.register_incoming(user_id, seq, now)
+
+        # Enqueue (spawns worker, never blocks)
+        await self.message_queue.enqueue(
+            user_id=user_id,
+            message_id=message_id,
+            text=text,
+            raw_update=raw_update or {},
+            metadata={"sequence": seq, "chat_id": chat_id}
+        )
+
+    async def _queue_to_debounce(self, user_id: int, batch: list):
+        """Message queue processor: pass each message through debounce."""
+        for msg in batch:
+            await self.debounce.add_message(user_id, msg)
+
+    async def _process_batch(self, batch: MessageBatch):
+        """
+        Called by debounce when batch is ready.
+        This is where actual processing happens.
+        """
+        user_id = batch.user_id
+        text = batch.merged_text
+        seq = batch.latest_sequence
+        chat_id = None
+        raw_update = None
+
+        # Extract chat_id and raw_update from last message metadata
+        if batch.messages:
+            last_msg = batch.messages[-1]
+            chat_id = last_msg.metadata.get("chat_id", user_id)
+            raw_update = last_msg.raw_update
+
+        log.info("[PIPELINE] Batch ready user=%s seq=%d count=%d text=%.50r",
+                 user_id, seq, batch.message_count, text)
+
+        try:
+            await self._run_full_pipeline(
+                user_id=user_id,
+                chat_id=chat_id or user_id,
+                text=text,
+                seq=seq,
+                raw_update=raw_update,
+                batch=batch
+            )
+        except Exception as e:
+            log.error("[PIPELINE] Pipeline error user=%s: %s", user_id, e)
+
+    async def _run_full_pipeline(self, user_id: int, chat_id: int,
+                                  text: str, seq: int,
+                                  raw_update: Optional[Dict],
+                                  batch: MessageBatch):
+        """
+        Full orchestration pipeline for a debounced message batch.
+        """
+        # ------------------------------------------------------------------
+        # FAST PATH: Check if this is a simple intent (bypass LLM)
+        # ------------------------------------------------------------------
+        session_hint = None  # Would load from DB in production
+        fast_intent, fast_response = fast_path_resolver.resolve(text, session_hint)
+
+        if fast_intent != FastPathIntent.NONE and fast_response:
+            # Check freshness before sending fast response
+            token = self.stale_guard.issue_token(user_id, seq, text)
+            if self.stale_guard.check_fresh(token):
+                log.info("[PIPELINE] FAST PATH user=%s intent=%s", user_id, fast_intent)
+                await self._send_response(chat_id, fast_response)
+                self.stale_guard.complete_token(token)
+            else:
+                log.warning("[PIPELINE] Fast path response was stale, skipping user=%s", user_id)
+            return
+
+        # ------------------------------------------------------------------
+        # FULL PIPELINE: Start speed manager (typing indicator + holding msg)
+        # ------------------------------------------------------------------
+        token = self.stale_guard.issue_token(user_id, seq, text)
+
+        async with ResponseSpeedManager(self.bot, chat_id, user_id) as speed:
+            # Run orchestrator with timeout protection
+            async def run_orch():
+                return await self.orchestrator.handle_message(
+                    user_id=user_id,
+                    text=text,
+                    raw_update=raw_update or {}
+                )
+
+            result, timed_out = await run_with_timeout(run_orch())
+
+        # ------------------------------------------------------------------
+        # STALE GUARD: Check if response is still current
+        # ------------------------------------------------------------------
+        if not self.stale_guard.check_fresh(token):
+            log.warning("[PIPELINE] STALE response discarded user=%s seq=%d", user_id, seq)
+            self.stale_guard.complete_token(token)
+            return
+
+        # ------------------------------------------------------------------
+        # SEND RESPONSE
+        # ------------------------------------------------------------------
+        if isinstance(result, str):
+            reply_text = result
+        elif hasattr(result, "reply"):
+            reply_text = result.reply
+        else:
+            reply_text = str(result)
+
+        await self._send_response(chat_id, reply_text)
+        self.stale_guard.complete_token(token)
+        log.info("[PIPELINE] Response sent user=%s seq=%d len=%d timed_out=%s",
+                 user_id, seq, len(reply_text), timed_out)
+
+        # ------------------------------------------------------------------
+        # BACKGROUND TASKS (fire-and-forget after response is sent)
+        # ------------------------------------------------------------------
+        try:
+            orch_result = result if hasattr(result, "memory_updated") else None
+            await self._schedule_background_tasks(user_id, text, reply_text, orch_result)
+        except Exception as e:
+            log.error("[PIPELINE] Background task scheduling error user=%s: %s", user_id, e)
+
+    async def _send_response(self, chat_id: int, text: str):
+        """Send response to Telegram. Safe fallback if bot not set."""
+        if not self.bot:
+            log.warning("[PIPELINE] Bot not set, cannot send response to chat %s", chat_id)
+            return
+        try:
+            await self.bot.send_message(chat_id, text)
+        except Exception as e:
+            log.error("[PIPELINE] Send response error chat=%s: %s", chat_id, e)
+
+    async def _schedule_background_tasks(self, user_id: int,
+                                           input_text: str,
+                                           reply_text: str,
+                                           orch_result: Optional[Any]):
+        """
+        Schedule all post-response background tasks.
+        These run AFTER response is sent. Never block user.
+        """
+        # Task 1: Orchestration log (normal priority)
+        async def log_task():
+            try:
+                self.orchestrator.logger.log({
+                    "user_id": user_id,
+                    "input": input_text[:200],
+                    "reply": reply_text[:200],
+                    "pipeline": "message_pipeline_v1"
+                }, {})
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Log error: %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="orch_log",
+            user_id=user_id,
+            coro_factory=log_task,
+            priority=TaskPriority.NORMAL
+        )
+
+        # Task 2: Memory write (high priority)
+        if orch_result and hasattr(orch_result, "memory_updated") and orch_result.memory_updated:
+            async def memory_task():
+                try:
+                    self.orchestrator.memory_writer.write(
+                        user_id=user_id,
+                        session={},
+                        orch_result=orch_result.__dict__ if hasattr(orch_result, "__dict__") else {}
+                    )
+                except Exception as e:
+                    log.debug("[PIPELINE_BG] Memory error: %s", e)
+
+            await self.async_worker.fire_and_forget(
+                task_type="memory_write",
+                user_id=user_id,
+                coro_factory=memory_task,
+                priority=TaskPriority.HIGH
+            )
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return pipeline health stats."""
+        return {
+            "queue": self.message_queue.get_stats(),
+            "debounce": self.debounce.get_stats(),
+            "stale_guard": self.stale_guard.get_stats(),
+            "async_worker": self.async_worker.get_stats(),
+        }
+
+
+# ---------------------------------------------------------------------------
+# Global pipeline singleton
+# ---------------------------------------------------------------------------
+_PIPELINE: Optional[MessagePipelineManager] = None
+
+
+def get_pipeline(bot=None) -> MessagePipelineManager:
+    """Get or create the global pipeline manager."""
+    global _PIPELINE
+    if _PIPELINE is None:
+        _PIPELINE = MessagePipelineManager(bot=bot)
+    if bot and not _PIPELINE.bot:
+        _PIPELINE.set_bot(bot)
+    return _PIPELINE
