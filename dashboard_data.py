@@ -533,6 +533,53 @@ class DashboardData:
             log.error("[DASHBOARD] _get_risk_trends error: %s", e)
             return []
 
+
+    async def get_recovery_governance(self) -> Dict[str, Any]:
+        """
+        Expose recovery policy governance data for the dashboard.
+        Integrates RecoveryPolicyEngine.get_dashboard_data().
+        """
+        try:
+            from recovery_policy_engine import get_recovery_policy_engine
+            engine = get_recovery_policy_engine()
+            if engine:
+                return await engine.get_dashboard_data()
+        except Exception as e:
+            log.error("[DASHBOARD] get_recovery_governance error: %s", e)
+        # Fallback: query directly from DB if engine not available
+        if not self._pool:
+            return {}
+        try:
+            async with self._pool.acquire() as conn:
+                silence_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM pm_client_profiles"
+                    " WHERE silence_respect=TRUE AND is_active=TRUE"
+                )
+                cooldown_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM pm_recovery_policy_log"
+                    " WHERE cooldown_until > NOW() AND action != 'ALLOW'"
+                )
+                escalation_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM pm_recovery_policy_log"
+                    " WHERE human_escalation_required=TRUE"
+                    " AND created_at > NOW() - INTERVAL '24 hours'"
+                )
+                recent_actions = await conn.fetch(
+                    "SELECT action, COUNT(*) AS count"
+                    " FROM pm_recovery_policy_log"
+                    " WHERE created_at > NOW() - INTERVAL '24 hours'"
+                    " GROUP BY action ORDER BY count DESC"
+                )
+            return {
+                "silence_respect_count":  int(silence_count or 0),
+                "active_cooldown_count":  int(cooldown_count or 0),
+                "human_escalation_24h":   int(escalation_count or 0),
+                "policy_actions_24h":     [dict(r) for r in recent_actions],
+            }
+        except Exception as e:
+            log.error("[DASHBOARD] get_recovery_governance fallback error: %s", e)
+            return {}
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
