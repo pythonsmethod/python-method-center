@@ -733,6 +733,42 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
+        # Task 4: Recovery policy governance check (background only, does NOT send messages)
+        async def policy_task():
+            try:
+                from recovery_policy_engine import get_recovery_policy_engine
+                from recovery_policy_engine import (
+                    UserContext, RiskProfile, RouteState, MemoryState
+                )
+                engine = get_recovery_policy_engine()
+                if not engine:
+                    return
+                # Build minimal context from available data for governance check
+                orch_ctx = orch_result.__dict__ if orch_result and hasattr(orch_result, '__dict__') else {}
+                user_ctx = UserContext(user_id=user_id)
+                risk_prof = RiskProfile()
+                route_st  = RouteState()
+                mem_st    = MemoryState()
+                decision  = await engine.evaluate_recovery_policy(
+                    user_ctx, risk_prof, route_st, mem_st
+                )
+                log.debug(
+                    "[PIPELINE_BG] Policy decision user=%s action=%s stage=%s fatigue=%.2f",
+                    user_id, decision.action,
+                    decision.dashboard_flags.get("stage", "?"),
+                    decision.fatigue_score,
+                )
+                await engine.persist_full_decision(decision)
+            except Exception as e:
+                log.debug("[PIPELINE_BG] Policy task error (non-fatal): %s", e)
+
+        await self.async_worker.fire_and_forget(
+            task_type="policy_governance",
+            user_id=user_id,
+            coro_factory=policy_task,
+            priority=TaskPriority.LOW
+        )
+
     def get_stats(self) -> Dict[str, Any]:
         """Return pipeline health stats."""
         return {
