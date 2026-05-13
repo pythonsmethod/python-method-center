@@ -9,7 +9,7 @@ When a user sends a message:
   4. Result: one orchestrator call with all context, not N sequential calls
 """
 
-import asyncioh
+import asyncio
 import logging
 import time
 from typing import Optional, List, Dict, Any, Callable, Awaitable
