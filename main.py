@@ -357,6 +357,18 @@ async def _start_pipeline_workers():
         from async_task_worker import async_worker
         await async_worker.start()
         log.info("[PIPELINE] AsyncTaskWorker started")
+        try:
+            from risk_predictor import init_risk_predictor
+            from memory_engine import get_memory_engine
+            mem = get_memory_engine()
+            pool = mem._pool if mem else None
+            if pool:
+                await init_risk_predictor(pool)
+                log.info("[PIPELINE] RiskPredictor initialized")
+            else:
+                log.warning("[PIPELINE] DB pool not ready — RiskPredictor skipped (will retry)")
+        except Exception as e:
+            log.warning("[PIPELINE] RiskPredictor init failed (non-fatal): %s", e)
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
