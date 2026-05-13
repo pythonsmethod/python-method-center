@@ -382,6 +382,25 @@ async def _init_policy_engine():
         log.warning("[PIPELINE] RecoveryPolicyEngine init failed (non-fatal): %s", e)
 
 
+async def _init_dispatcher():
+    """Initialize ProactiveMessageDispatcher. Non-fatal if fails."""
+    try:
+        import asyncpg
+        DATABASE_URL = os.environ.get("DATABASE_URL", "")
+        if not DATABASE_URL:
+            log.warning("[PIPELINE] DATABASE_URL not set — ProactiveMessageDispatcher skipped")
+            return
+        pool = await asyncpg.create_pool(
+            DATABASE_URL, min_size=1, max_size=2, command_timeout=30
+        )
+        from proactive_message_dispatcher import init_dispatcher
+        # Use the module-level send_message function as the approved send path
+        init_dispatcher(db_pool=pool, send_message_fn=send_message)
+        log.info("[PIPELINE] ProactiveMessageDispatcher initialized successfully")
+    except Exception as e:
+        log.warning("[PIPELINE] ProactiveMessageDispatcher init failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -395,6 +414,7 @@ async def _start_pipeline_workers():
         # Init RiskPredictor with retry — pool may not be ready immediately at startup
         asyncio.create_task(_init_risk_predictor_with_retry())
         asyncio.create_task(_init_policy_engine())
+        asyncio.create_task(_init_dispatcher())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
@@ -621,6 +641,43 @@ async def webhook_v2(request: Request):
 # ---------------------------------------------------------------------------
 # Startup event: start pipeline workers if flag enabled
 # ---------------------------------------------------------------------------
+@app.get("/risk/governance")
+async def risk_governance():
+    """
+    Recovery governance dashboard endpoint.
+    Returns combined policy engine + dispatcher metrics.
+    """
+    try:
+        result = {}
+        # Policy engine data
+        try:
+            from recovery_policy_engine import get_recovery_policy_engine
+            engine = get_recovery_policy_engine()
+            if engine:
+                result["policy"] = await engine.get_dashboard_data()
+        except Exception as e:
+            result["policy"] = {"error": str(e)}
+        # Dispatcher data
+        try:
+            from proactive_message_dispatcher import get_dispatcher
+            dispatcher = get_dispatcher()
+            if dispatcher:
+                result["dispatch"] = await dispatcher.get_dispatch_dashboard()
+        except Exception as e:
+            result["dispatch"] = {"error": str(e)}
+        # Dashboard data
+        try:
+            from dashboard_data import get_dashboard
+            dash = get_dashboard()
+            result["recovery_governance"] = await dash.get_recovery_governance()
+        except Exception as e:
+            result["recovery_governance"] = {"error": str(e)}
+        return JSONResponse(content=result)
+    except Exception as e:
+        log.error("[API] /risk/governance error: %s", e)
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
 @app.on_event("startup")
 async def on_startup():
     log.info("[STARTUP] USE_NEW_MESSAGE_PIPELINE=%s PIPELINE_SHADOW_MODE=%s",
