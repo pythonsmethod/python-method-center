@@ -593,6 +593,19 @@ class DashboardData:
             return {}
 
 
+    async def get_behaviour_stats(self) -> dict:
+        """Return Adaptive Behaviour Engine stats for dashboard exposure."""
+        try:
+            from adaptive_behaviour_engine import get_behaviour_engine
+            engine = get_behaviour_engine()
+            if not engine:
+                return {"error": "behaviour_engine_not_initialized"}
+            return engine.get_engine_stats()
+        except Exception as e:
+            log.error("[DASHBOARD] get_behaviour_stats error: %s", e)
+            return {}
+
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
