@@ -9,7 +9,7 @@ When a user sends a message:
   4. Result: one orchestrator call with all context, not N sequential calls
 """
 
-import asyncio
+import asyncioh
 import logging
 import time
 from typing import Optional, List, Dict, Any, Callable, Awaitable
@@ -139,8 +139,8 @@ class DebounceManager:
             parts = []
             for idx, m in enumerate(messages, start=1):
                 if m.text.strip():
-                    parts.append(f"[message_{idx}]: {m.text.strip()}")
-            merged_text = "\n".join(parts)
+                    parts.append(f"[message_{idx}]:\n{m.text.strip()}")
+                        merged_text = "\n\n".join(parts)
             logger.info("[DEBOUNCE] Merged %d messages for user %s into batch format",
                         len(messages), user_id)
 
