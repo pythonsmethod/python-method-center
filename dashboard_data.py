@@ -580,6 +580,19 @@ class DashboardData:
             log.error("[DASHBOARD] get_recovery_governance fallback error: %s", e)
             return {}
 
+    async def get_silent_scanner_stats(self) -> dict:
+        """Return Silent User Scanner stats for dashboard exposure."""
+        try:
+            from silent_user_scanner import get_scanner
+            scanner = get_scanner()
+            if not scanner:
+                return {"error": "scanner_not_initialized"}
+            return scanner.get_scanner_stats()
+        except Exception as e:
+            log.error("[DASHBOARD] get_silent_scanner_stats error: %s", e)
+            return {}
+
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
