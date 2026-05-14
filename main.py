@@ -498,6 +498,16 @@ async def _init_cognitive_orchestrator():
         log.warning("[COGNITIVE] CentralCognitiveOrchestrator init failed (non-fatal): %s", e)
 
 
+async def _init_longitudinal_modeling():
+    """Phase 3.14 — Initialize Longitudinal Rehabilitation Modeling singleton. Fail-safe."""
+    try:
+        from longitudinal_rehabilitation_modeling import init_longitudinal_modeling_engine
+        await init_longitudinal_modeling_engine()
+        log.info("[LONGITUDINAL] Longitudinal Rehabilitation Modeling initialized in main")
+    except Exception as e:
+        log.warning("[LONGITUDINAL] Longitudinal Modeling init failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -521,6 +531,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_pacing_engine())
         asyncio.create_task(_init_load_balancing_engine())
         asyncio.create_task(_init_cognitive_orchestrator())
+    asyncio.create_task(_init_longitudinal_modeling())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
