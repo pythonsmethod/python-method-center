@@ -606,6 +606,25 @@ class DashboardData:
             return {}
 
 
+    async def get_continuity_stats(self) -> dict:
+        """Return Clinical Continuity Engine stats for dashboard exposure."""
+        try:
+            from clinical_continuity_engine import get_continuity_engine
+            engine = get_continuity_engine()
+            if not engine:
+                return {"error": "continuity_engine_not_initialized"}
+            try:
+                from main import get_db_pool
+                pool = get_db_pool()
+            except Exception:
+                pool = None
+            import asyncio
+            return asyncio.get_event_loop().run_until_complete(engine.get_engine_stats(pool))
+        except Exception as e:
+            log.error("[DASHBOARD] get_continuity_stats error: %s", e)
+            return {}
+
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
