@@ -568,6 +568,40 @@ async def _meta_continuity_loop():
             log.debug("[META_CONT] loop error: %s", e)
         await asyncio.sleep(600)
 
+async def _init_institutional_memory_loop():
+    """Phase 3.19 — Initialize InstitutionalMemoryEngine. Fail-safe."""
+    try:
+        from institutional_memory_intelligence import init_institutional_memory_engine
+        import asyncpg
+        db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not db_url:
+            log.warning("[INST_MEM] No DATABASE_URL found — skipped")
+            return
+        pool = await asyncpg.create_pool(db_url, min_size=1, max_size=2, command_timeout=30)
+        await init_institutional_memory_engine(pool)
+        log.info("[INST_MEM] InstitutionalMemoryEngine initialized in main")
+    except Exception as e:
+        log.warning("[INST_MEM] Institutional Memory init failed (non-fatal): %s", e)
+
+
+async def _institutional_memory_loop():
+    """Phase 3.19 — Periodic institutional memory snapshot. Runs every 30 min."""
+    await asyncio.sleep(600)
+    while True:
+        try:
+            from institutional_memory_intelligence import evaluate_institutional_memory
+            result = await evaluate_institutional_memory()
+            log.info(
+                "[INST_MEM] state=%s stability=%.3f sample=%s",
+                result.get("institutional_memory_state", "UNKNOWN"),
+                result.get("institutional_stability_score", 0.0),
+                result.get("historical_sample_size", 0),
+            )
+        except Exception as e:
+            log.debug("[INST_MEM] loop error: %s", e)
+        await asyncio.sleep(1800)
+
+
 
  
 
@@ -601,6 +635,8 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_self_stabilizing_governance())
         asyncio.create_task(_init_meta_continuity_loop())
         asyncio.create_task(_meta_continuity_loop())
+        asyncio.create_task(_init_institutional_memory_loop())
+        asyncio.create_task(_institutional_memory_loop())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
