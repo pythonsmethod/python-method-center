@@ -864,7 +864,51 @@ class MessagePipelineManager:
         )
 
 
-        # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
+                # Task 5.7 — Trajectory Intelligence (LOW priority, enriches dispatcher context)
+        # Runs AFTER continuity_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
+        async def trajectory_task():
+            try:
+                from trajectory_intelligence_engine import get_trajectory_engine
+                engine = get_trajectory_engine()
+                if engine:
+                    silence_resp  = getattr(self, '_silence_respected', False)
+                    human_esc     = getattr(self, '_human_escalation_active', False)
+                    rec_policy    = getattr(self, '_recovery_policy_active', False)
+                    profile_data  = context.get('profile', {}) if context else {}
+                    continuity_r  = context.get('continuity_result', {}) if context else {}
+                    risk_r        = context.get('risk_result', {}) if context else {}
+                    behaviour_r   = context.get('behaviour_result', {}) if context else {}
+                    t_result = await engine.evaluate_trajectory(
+                        user_id=user_id,
+                        profile=profile_data,
+                        continuity_result=continuity_r,
+                        risk_result=risk_r,
+                        behaviour_result=behaviour_r,
+                        silence_respected=silence_resp,
+                        human_escalation=human_esc,
+                        recovery_policy_active=rec_policy,
+                    )
+                    if context is not None:
+                        context['trajectory_result'] = {
+                            'trajectory_state':   t_result.trajectory_state,
+                            'trajectory_score':   t_result.trajectory_score,
+                            'trajectory_direction': t_result.trajectory_direction,
+                            'trajectory_gap':     t_result.trajectory_gap_detected,
+                            'escalation_hint':    t_result.escalation_hint,
+                            'action':             t_result.recommended_action,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] Trajectory task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="trajectory_eval",
+            user_id=user_id,
+            coro_factory=trajectory_task,
+        )
+
+
+# Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
                 from silent_user_scanner import get_scanner
