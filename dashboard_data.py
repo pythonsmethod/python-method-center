@@ -978,3 +978,72 @@ async def get_cognitive_orchestrator_stats(db) -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+async def get_longitudinal_modeling_stats(db) -> dict:
+    """Phase 3.14 — Longitudinal Rehabilitation Modeling stats for dashboard."""
+    try:
+        rows = await db.fetch(
+            """
+            SELECT
+                long_term_rehabilitation_state,
+                COUNT(*) AS cnt,
+                AVG(longitudinal_stability_score) AS avg_stability,
+                AVG(rehabilitation_resilience_score) AS avg_resilience,
+                AVG(continuity_sustainability_score) AS avg_sustainability,
+                AVG(pacing_adaptation_quality) AS avg_pacing_adaptation,
+                AVG(recovery_after_disruption_score) AS avg_recovery,
+                AVG(long_term_route_durability) AS avg_durability,
+                AVG(continuity_erosion_risk) AS avg_erosion_risk,
+                AVG(rehabilitation_persistence_score) AS avg_persistence,
+                AVG(longitudinal_coherence_score) AS avg_coherence,
+                COUNT(*) FILTER (WHERE recurring_instability_detected = TRUE) AS recurring_instability_count,
+                COUNT(*) FILTER (WHERE disengagement_cycle_detected = TRUE) AS disengagement_cycle_count,
+                COUNT(*) FILTER (WHERE last_longitudinal_check IS NOT NULL) AS checked_count
+            FROM pm_client_profiles
+            GROUP BY long_term_rehabilitation_state
+            ORDER BY cnt DESC
+            """
+        )
+        state_distribution = {}
+        totals = {
+            "avg_stability": [], "avg_resilience": [], "avg_sustainability": [],
+            "avg_pacing_adaptation": [], "avg_recovery": [], "avg_durability": [],
+            "avg_erosion_risk": [], "avg_persistence": [], "avg_coherence": [],
+        }
+        total_recurring_instability = 0
+        total_disengagement_cycles = 0
+        total_checked = 0
+        for row in rows:
+            state = row["long_term_rehabilitation_state"] or "UNKNOWN"
+            state_distribution[state] = int(row["cnt"])
+            total_recurring_instability += int(row["recurring_instability_count"] or 0)
+            total_disengagement_cycles += int(row["disengagement_cycle_count"] or 0)
+            total_checked += int(row["checked_count"] or 0)
+            for key in totals:
+                val = row[key]
+                if val is not None:
+                    totals[key].append(float(val))
+
+        def safe_avg(lst):
+            return round(sum(lst) / len(lst), 4) if lst else 0.0
+
+        return {
+            "phase": "3.14",
+            "engine": "LongitudinalRehabilitationModelingEngine",
+            "state_distribution": state_distribution,
+            "avg_longitudinal_stability_score": safe_avg(totals["avg_stability"]),
+            "avg_rehabilitation_resilience_score": safe_avg(totals["avg_resilience"]),
+            "avg_continuity_sustainability_score": safe_avg(totals["avg_sustainability"]),
+            "avg_pacing_adaptation_quality": safe_avg(totals["avg_pacing_adaptation"]),
+            "avg_recovery_after_disruption_score": safe_avg(totals["avg_recovery"]),
+            "avg_long_term_route_durability": safe_avg(totals["avg_durability"]),
+            "avg_continuity_erosion_risk": safe_avg(totals["avg_erosion_risk"]),
+            "avg_rehabilitation_persistence_score": safe_avg(totals["avg_persistence"]),
+            "avg_longitudinal_coherence_score": safe_avg(totals["avg_coherence"]),
+            "total_recurring_instability_detected": total_recurring_instability,
+            "total_disengagement_cycles_detected": total_disengagement_cycles,
+            "total_profiles_checked": total_checked,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
