@@ -1230,6 +1230,29 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=adaptive_strategy_task,
         )
+                                                       # Task 5.15 — Rehabilitation Route Simulation (Phase 3.16 — read-only observer)
+        # IMMUTABLE: must never predict outcomes, create fear, or override governance
+        async def route_simulation_task():
+            try:
+                from rehabilitation_route_simulation import evaluate_route_simulation
+                human_esc = context.get("human_escalation_active", False)
+                silence = context.get("silence_respected", False)
+                if human_esc or silence:
+                    return  # governance layers take absolute priority
+                sim_result = await evaluate_route_simulation(user_id, context)
+                if sim_result and not sim_result.get("is_neutral", True):
+                    context["route_simulation_state"] = sim_result.get("route_simulation_state", "UNKNOWN")
+                    context["simulation_stability_score"] = sim_result.get("simulation_stability_score", 0.0)
+                    context["simulation_coherence_score"] = sim_result.get("simulation_coherence_score", 0.0)
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] route_simulation_task exception (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="route_simulation_eval",
+            user_id=user_id,
+            coro_factory=route_simulation_task,
+        )
+
 
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
