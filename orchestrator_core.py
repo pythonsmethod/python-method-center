@@ -1205,6 +1205,31 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=longitudinal_modeling_task,
         )
+        # Task 5.14 — Adaptive Rehabilitation Strategy (after longitudinal, before dispatcher)
+        # Runs AFTER longitudinal_modeling_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never send messages, override governance, make medical recommendations,
+        #             recommend treatment, or create urgency
+        async def adaptive_strategy_task():
+            try:
+                from adaptive_rehabilitation_strategy import evaluate_adaptive_strategy
+                human_esc = context.get("human_escalation_active", False)
+                silence = context.get("silence_respected", False)
+                if human_esc or silence:
+                    return  # governance layers take absolute priority
+                strategy_result = await evaluate_adaptive_strategy(user_id, context)
+                if strategy_result and not strategy_result.get("is_neutral", True):
+                    context["adaptive_strategy_state"] = strategy_result.get("adaptive_strategy_state", "UNKNOWN")
+                    context["recommended_continuity_strategy"] = strategy_result.get("recommended_continuity_strategy", "hold_no_change")
+                    context["strategy_shift_needed"] = strategy_result.get("strategy_shift_needed", False)
+                    context["continuity_support_mode"] = strategy_result.get("continuity_support_mode", "hold")
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] adaptive_strategy_task exception (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="adaptive_strategy_eval",
+            user_id=user_id,
+            coro_factory=adaptive_strategy_task,
+        )
 
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
