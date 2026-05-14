@@ -1179,3 +1179,57 @@ async def get_route_simulation_stats(db_pool) -> dict:
     except Exception as exc:
         log.debug("[DASHBOARD] get_route_simulation_stats exception: %s", exc)
         return {"engine": "RehabilitationRouteSimulationEngine", "phase": "3.16", "total_evaluated": 0}
+
+
+async def get_governance_stabilization_stats() -> dict:
+    """Phase 3.17 — Dashboard stats for SelfStabilizingGovernanceEngine."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    COUNT(*) AS total,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'STABLE_GOVERNANCE') AS stable_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'DRIFT_ACCUMULATING') AS drift_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'OVERLOAD_CASCADE_RISK') AS cascade_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'COHERENCE_DEGRADATION') AS coherence_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'PACING_PRESSURE') AS pacing_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'ROUTE_CONFLICT_PRESSURE') AS route_conflict_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'ESCALATION_INSTABILITY') AS escalation_count,
+                    COUNT(*) FILTER (WHERE governance_stability_state = 'STABILIZATION_REQUIRED') AS stabilization_required_count,
+                    COUNT(*) FILTER (WHERE stabilization_needed = TRUE) AS stabilization_needed_count,
+                    AVG(governance_drift_score) AS avg_drift_score,
+                    AVG(overload_cascade_risk) AS avg_cascade_risk,
+                    AVG(coherence_degradation_score) AS avg_coherence_degradation,
+                    AVG(escalation_stability_score) AS avg_escalation_stability,
+                    AVG(dispatcher_safety_alignment) AS avg_dispatcher_safety
+                FROM pm_client_profiles
+                WHERE last_governance_stabilization_check IS NOT NULL
+            """)
+        if not rows:
+            return {"engine": "SelfStabilizingGovernanceEngine", "phase": "3.17", "total_evaluated": 0}
+        r = dict(rows[0])
+        def safe_round(v):
+            return round(float(v), 4) if v is not None else 0.0
+        return {
+            "engine": "SelfStabilizingGovernanceEngine",
+            "phase": "3.17",
+            "total_evaluated": r.get("total", 0),
+            "stable_governance_count": r.get("stable_count", 0),
+            "drift_accumulating_count": r.get("drift_count", 0),
+            "overload_cascade_risk_count": r.get("cascade_count", 0),
+            "coherence_degradation_count": r.get("coherence_count", 0),
+            "pacing_pressure_count": r.get("pacing_count", 0),
+            "route_conflict_pressure_count": r.get("route_conflict_count", 0),
+            "escalation_instability_count": r.get("escalation_count", 0),
+            "stabilization_required_count": r.get("stabilization_required_count", 0),
+            "stabilization_needed_count": r.get("stabilization_needed_count", 0),
+            "avg_governance_drift_score": safe_round(r.get("avg_drift_score")),
+            "avg_overload_cascade_risk": safe_round(r.get("avg_cascade_risk")),
+            "avg_coherence_degradation_score": safe_round(r.get("avg_coherence_degradation")),
+            "avg_escalation_stability_score": safe_round(r.get("avg_escalation_stability")),
+            "avg_dispatcher_safety_alignment": safe_round(r.get("avg_dispatcher_safety")),
+        }
+    except Exception as exc:
+        log.debug("[DASHBOARD] get_governance_stabilization_stats exception: %s", exc)
+        return {"engine": "SelfStabilizingGovernanceEngine", "phase": "3.17", "total_evaluated": 0}
