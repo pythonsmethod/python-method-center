@@ -1051,6 +1051,59 @@ class MessagePipelineManager:
         )
 
 
+        # Task 5.11 — Expert Load Balancing Intelligence (LOW priority, enriches dispatcher context)
+        # Runs AFTER pacing_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never assign medical responsibility, force handoffs, send messages,
+        #            contact experts directly, bypass governance, override human decisions
+        async def load_balancing_task():
+            try:
+                from expert_load_balancing_engine import get_load_balancing_engine
+                eng = get_load_balancing_engine()
+                if eng:
+                    # Respect governance hierarchy — never override higher layers
+                    human_esc = context.get("human_escalation_active", False)
+                    silence = context.get("silence_respected", False)
+                    recovery = context.get("recovery_policy_active", False)
+                    if human_esc or silence or recovery:
+                        return  # governance layers take priority
+
+                    lb_context = {
+                        "active_escalations": context.get("active_escalations", 0.0),
+                        "recent_escalations_24h": context.get("recent_escalations_24h", 0.0),
+                        "queue_depth": context.get("queue_depth", 0.0),
+                        "expert_caseload_ratio": context.get("expert_caseload_ratio", 0.0),
+                        "escalation_density": context.get("escalation_density", 0.0),
+                        "handoff_volume": context.get("handoff_volume", 0.0),
+                        "capacity_headroom": context.get("capacity_headroom", 1.0),
+                        "distribution_balance": context.get("distribution_balance", 1.0),
+                        "recovery_trend": context.get("recovery_trend", 0.0),
+                        "response_lag": context.get("response_lag", 0.0),
+                        "continuity_handoff_risk": context.get("continuity_handoff_risk", 0.0),
+                        "emotional_safety_buffer": context.get("emotional_safety_buffer", 1.0),
+                        "per_expert_loads": context.get("per_expert_loads", []),
+                    }
+                    result = await eng.evaluate_load_balance(
+                        user_id=user_id,
+                        context=lb_context,
+                    )
+                    if context is not None:
+                        context["load_balancing_result"] = {
+                            "expert_load_state": result.expert_load_state,
+                            "support_congestion_score": result.support_congestion_score,
+                            "safe_assignment_capacity": result.safe_assignment_capacity,
+                            "operational_stability_score": result.operational_stability_score,
+                            "human_support_integrity_score": result.human_support_integrity_score,
+                            "integrity_at_risk": result.integrity_at_risk,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] LoadBalancing task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="load_balancing_eval",
+            user_id=user_id,
+            coro_factory=load_balancing_task,
+        )
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
