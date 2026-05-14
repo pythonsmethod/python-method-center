@@ -1290,3 +1290,56 @@ async def get_meta_continuity_stats(pool) -> dict:
             }
     except Exception as exc:
         return neutral
+
+
+async def get_institutional_memory_stats(pool) -> dict:
+    """Phase 3.19: Institutional Memory Intelligence — historical pattern stats.
+    Returns latest row from pm_institutional_memory.
+    Read-only. No individual client data. No outbound calls.
+    Returns neutral dict on any exception.
+    """
+    neutral = {
+        "engine": "InstitutionalMemoryEngine",
+        "phase": "3.19",
+        "institutional_memory_state": "UNKNOWN",
+        "governance_pattern_score": 0.0,
+        "overload_pattern_score": 0.0,
+        "pacing_pattern_score": 0.0,
+        "continuity_resilience_score": 0.0,
+        "stabilization_effectiveness_score": 0.0,
+        "route_erosion_pattern_score": 0.0,
+        "recovery_resilience_pattern_score": 0.0,
+        "dispatcher_safety_pattern_score": 0.0,
+        "silence_integrity_pattern_score": 0.0,
+        "institutional_stability_score": 0.0,
+        "historical_sample_size": 0,
+        "recorded_at": None,
+    }
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM pm_institutional_memory ORDER BY recorded_at DESC LIMIT 1"
+            )
+            if not row:
+                return neutral
+            def safe_round(v):
+                return round(float(v), 4) if v is not None else 0.0
+            return {
+                "engine": "InstitutionalMemoryEngine",
+                "phase": "3.19",
+                "institutional_memory_state": row.get("institutional_memory_state", "UNKNOWN"),
+                "governance_pattern_score": safe_round(row.get("governance_pattern_score")),
+                "overload_pattern_score": safe_round(row.get("overload_pattern_score")),
+                "pacing_pattern_score": safe_round(row.get("pacing_pattern_score")),
+                "continuity_resilience_score": safe_round(row.get("continuity_resilience_score")),
+                "stabilization_effectiveness_score": safe_round(row.get("stabilization_effectiveness_score")),
+                "route_erosion_pattern_score": safe_round(row.get("route_erosion_pattern_score")),
+                "recovery_resilience_pattern_score": safe_round(row.get("recovery_resilience_pattern_score")),
+                "dispatcher_safety_pattern_score": safe_round(row.get("dispatcher_safety_pattern_score")),
+                "silence_integrity_pattern_score": safe_round(row.get("silence_integrity_pattern_score")),
+                "institutional_stability_score": safe_round(row.get("institutional_stability_score")),
+                "historical_sample_size": int(row.get("historical_sample_size", 0) or 0),
+                "recorded_at": str(row.get("recorded_at")) if row.get("recorded_at") else None,
+            }
+    except Exception as exc:
+        return neutral
