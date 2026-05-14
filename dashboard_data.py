@@ -684,6 +684,81 @@ class DashboardData:
             log.warning("[DASHBOARD] get_trajectory_stats error: %s", e)
             return {}
 
+
+    async def get_state_machine_stats(self) -> dict:
+        """Return Rehabilitation State Machine stats for dashboard."""
+        try:
+            from rehabilitation_state_machine import get_state_machine
+            sm = get_state_machine()
+            if not sm:
+                return {"status": "not_initialized"}
+            pool = self._pool
+            if not pool:
+                return {"status": "no_db"}
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'initial_contact') AS initial_contact,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'needs_assessment') AS needs_assessment,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'awaiting_consultation') AS awaiting_consultation,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'consultation_active') AS consultation_active,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'awaiting_analysis') AS awaiting_analysis,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'analysis_review') AS analysis_review,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'treatment_planning') AS treatment_planning,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'treatment_active') AS treatment_active,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'monitoring') AS monitoring,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'follow_up') AS follow_up,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'maintenance') AS maintenance,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'paused') AS paused,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'stalled') AS stalled,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'lost_to_follow_up') AS lost_to_follow_up,
+                        COUNT(*) FILTER (WHERE rehabilitation_state = 'completed') AS completed,
+                        COUNT(*) FILTER (WHERE stage_stall_detected = TRUE) AS stall_count,
+                        COUNT(*) FILTER (WHERE progression_gate_status = 'open') AS gate_open,
+                        COUNT(*) FILTER (WHERE progression_gate_status = 'closed') AS gate_closed,
+                        COUNT(*) FILTER (WHERE escalation_gate_status IN ('flagged','active')) AS escalation_flagged,
+                        ROUND(AVG(stage_completion_score)::numeric, 4) AS avg_completion_score,
+                        COUNT(*) FILTER (WHERE rehabilitation_stage = 'intake') AS stage_intake,
+                        COUNT(*) FILTER (WHERE rehabilitation_stage = 'diagnostic') AS stage_diagnostic,
+                        COUNT(*) FILTER (WHERE rehabilitation_stage = 'intervention') AS stage_intervention,
+                        COUNT(*) FILTER (WHERE rehabilitation_stage = 'continuity') AS stage_continuity
+                    FROM pm_client_profiles
+                """)
+                return {
+                    "status": "ok",
+                    "states": {
+                        "initial_contact":       int(row["initial_contact"] or 0),
+                        "needs_assessment":      int(row["needs_assessment"] or 0),
+                        "awaiting_consultation": int(row["awaiting_consultation"] or 0),
+                        "consultation_active":   int(row["consultation_active"] or 0),
+                        "awaiting_analysis":     int(row["awaiting_analysis"] or 0),
+                        "analysis_review":       int(row["analysis_review"] or 0),
+                        "treatment_planning":    int(row["treatment_planning"] or 0),
+                        "treatment_active":      int(row["treatment_active"] or 0),
+                        "monitoring":            int(row["monitoring"] or 0),
+                        "follow_up":             int(row["follow_up"] or 0),
+                        "maintenance":           int(row["maintenance"] or 0),
+                        "paused":                int(row["paused"] or 0),
+                        "stalled":               int(row["stalled"] or 0),
+                        "lost_to_follow_up":     int(row["lost_to_follow_up"] or 0),
+                        "completed":             int(row["completed"] or 0),
+                    },
+                    "stages": {
+                        "intake":       int(row["stage_intake"] or 0),
+                        "diagnostic":   int(row["stage_diagnostic"] or 0),
+                        "intervention": int(row["stage_intervention"] or 0),
+                        "continuity":   int(row["stage_continuity"] or 0),
+                    },
+                    "stall_count":         int(row["stall_count"] or 0),
+                    "gate_open":           int(row["gate_open"] or 0),
+                    "gate_closed":         int(row["gate_closed"] or 0),
+                    "escalation_flagged":  int(row["escalation_flagged"] or 0),
+                    "avg_completion_score": float(row["avg_completion_score"] or 0),
+                }
+        except Exception as e:
+            log.warning("[DASHBOARD] get_state_machine_stats error: %s", e)
+            return {}
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
