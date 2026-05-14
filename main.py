@@ -458,6 +458,16 @@ async def _init_state_machine():
         log.warning("[STATE_MACHINE] _init_state_machine failed (non-fatal): %s", e)
 
 
+async def _init_orchestration_engine():
+    """Initialise MultiStageOrchestrationEngine singleton. Fail-safe: non-fatal on any error."""
+    try:
+        from multi_stage_orchestration_engine import init_orchestration_engine
+        await init_orchestration_engine()
+        log.info("[ORCHESTRATION] MultiStageOrchestrationEngine initialized in main")
+    except Exception as e:
+        log.warning("[ORCHESTRATION] _init_orchestration_engine failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -477,6 +487,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_continuity_engine())
         asyncio.create_task(_init_trajectory_engine())
         asyncio.create_task(_init_state_machine())
+        asyncio.create_task(_init_orchestration_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
