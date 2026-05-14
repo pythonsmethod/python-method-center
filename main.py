@@ -468,6 +468,16 @@ async def _init_orchestration_engine():
         log.warning("[ORCHESTRATION] _init_orchestration_engine failed (non-fatal): %s", e)
 
 
+async def _init_pacing_engine():
+    """Initialise DynamicPacingEngine singleton. Fail-safe: non-fatal on any error."""
+    try:
+        from dynamic_pacing_intelligence import init_pacing_engine
+        await init_pacing_engine()
+        log.info("[PACING] DynamicPacingEngine initialized in main")
+    except Exception as e:
+        log.warning("[PACING] _init_pacing_engine failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -488,6 +498,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_trajectory_engine())
         asyncio.create_task(_init_state_machine())
         asyncio.create_task(_init_orchestration_engine())
+        asyncio.create_task(_init_pacing_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
