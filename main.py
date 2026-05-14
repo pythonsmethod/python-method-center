@@ -507,6 +507,16 @@ async def _init_longitudinal_modeling():
     except Exception as e:
         log.warning("[LONGITUDINAL] Longitudinal Modeling init failed (non-fatal): %s", e)
 
+async def _init_adaptive_strategy():
+    """Phase 3.15 — Initialize AdaptiveRehabilitationStrategyEngine singleton. Fail-safe."""
+    try:
+        from adaptive_rehabilitation_strategy import init_adaptive_strategy_engine
+        await init_adaptive_strategy_engine()
+        log.info("[STRATEGY] AdaptiveRehabilitationStrategyEngine initialized in main")
+    except Exception as e:
+        log.warning("[STRATEGY] Adaptive Strategy init failed (non-fatal): %s", e)
+
+
 
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
@@ -532,6 +542,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_load_balancing_engine())
         asyncio.create_task(_init_cognitive_orchestrator())
         asyncio.create_task(_init_longitudinal_modeling())
+        asyncio.create_task(_init_adaptive_strategy())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
