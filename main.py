@@ -531,7 +531,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_pacing_engine())
         asyncio.create_task(_init_load_balancing_engine())
         asyncio.create_task(_init_cognitive_orchestrator())
-    asyncio.create_task(_init_longitudinal_modeling())
+        asyncio.create_task(_init_longitudinal_modeling())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
