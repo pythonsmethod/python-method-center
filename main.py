@@ -428,6 +428,16 @@ async def _init_behaviour_engine():
         log.warning("[BEHAVIOUR] _init_behaviour_engine failed (non-fatal): %s", e)
 
 
+async def _init_continuity_engine():
+    """Initialise ClinicalContinuityEngine singleton. Fail-safe: non-fatal on any error."""
+    try:
+        from clinical_continuity_engine import init_continuity_engine
+        engine = init_continuity_engine()
+        log.info("[CONTINUITY] ClinicalContinuityEngine initialized in main")
+    except Exception as e:
+        log.warning("[CONTINUITY] _init_continuity_engine failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -444,6 +454,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_dispatcher())
         asyncio.create_task(_init_scanner())
         asyncio.create_task(_init_behaviour_engine())
+        asyncio.create_task(_init_continuity_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
