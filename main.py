@@ -438,6 +438,16 @@ async def _init_continuity_engine():
         log.warning("[CONTINUITY] _init_continuity_engine failed (non-fatal): %s", e)
 
 
+async def _init_trajectory_engine():
+    """Initialise TrajectoryIntelligenceEngine singleton. Fail-safe: non-fatal on any error."""
+    try:
+        from trajectory_intelligence_engine import init_trajectory_engine
+        await init_trajectory_engine()
+        log.info("[TRAJECTORY] TrajectoryIntelligenceEngine initialized in main")
+    except Exception as e:
+        log.warning("[TRAJECTORY] _init_trajectory_engine failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -455,6 +465,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_scanner())
         asyncio.create_task(_init_behaviour_engine())
         asyncio.create_task(_init_continuity_engine())
+        asyncio.create_task(_init_trajectory_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
