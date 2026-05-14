@@ -1138,3 +1138,44 @@ def get_adaptive_strategy_stats():
             "total_evaluated": 0,
             "error": str(exc),
         }
+
+
+async def get_route_simulation_stats(db_pool) -> dict:
+    """Phase 3.16 — Dashboard stats for Rehabilitation Route Simulation Engine."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT
+                    COUNT(*) AS total,
+                    AVG(simulation_stability_score) AS avg_stability_score,
+                    AVG(simulation_coherence_score) AS avg_coherence_score,
+                    AVG(route_erosion_risk_projection) AS avg_erosion_risk,
+                    COUNT(*) FILTER (WHERE route_simulation_state = 'STABLE_SIMULATION') AS stable_count,
+                    COUNT(*) FILTER (WHERE route_simulation_state = 'HIGH_UNCERTAINTY') AS high_uncertainty_count,
+                    COUNT(*) FILTER (WHERE route_simulation_state = 'ROUTE_EROSION_RISK') AS erosion_risk_count,
+                    COUNT(*) FILTER (WHERE simulation_stability_score >= 0.7) AS high_stability_count
+                FROM pm_client_profiles
+                WHERE last_route_simulation_check IS NOT NULL
+            """)
+            if not rows:
+                return {"engine": "RehabilitationRouteSimulationEngine", "phase": "3.16", "total_evaluated": 0}
+            r = dict(rows[0])
+            def safe_round(v):
+                return round(float(v), 4) if v is not None else 0.0
+            return {
+                "engine": "RehabilitationRouteSimulationEngine",
+                "phase": "3.16",
+                "total_evaluated": r.get("total", 0),
+                "avg_simulation_stability_score": safe_round(r.get("avg_stability_score")),
+                "avg_simulation_coherence_score": safe_round(r.get("avg_coherence_score")),
+                "avg_route_erosion_risk": safe_round(r.get("avg_erosion_risk")),
+                "stable_simulation_count": r.get("stable_count", 0),
+                "high_uncertainty_count": r.get("high_uncertainty_count", 0),
+                "erosion_risk_count": r.get("erosion_risk_count", 0),
+                "high_stability_count": r.get("high_stability_count", 0),
+            }
+    except Exception as exc:
+        log.debug("[DASHBOARD] get_route_simulation_stats exception: %s", exc)
+        return {"engine": "RehabilitationRouteSimulationEngine", "phase": "3.16", "total_evaluated": 0}
