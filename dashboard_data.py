@@ -870,3 +870,56 @@ def get_dashboard() -> DashboardData:
     if _dashboard is None:
         _dashboard = DashboardData()
     return _dashboard
+
+
+async def get_load_balancing_stats(db) -> dict:
+    """
+    Phase 3.12 — Expert Load Balancing Intelligence dashboard stats.
+    Returns aggregate metrics for expert load state distribution.
+    Fail-safe: returns error dict on any exception.
+    """
+    try:
+        rows = await db.fetch("""
+            SELECT
+                COUNT(*) AS total_evaluated,
+                COUNT(*) FILTER (WHERE expert_load_state = 'BALANCED') AS balanced_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'PRESSURED') AS pressured_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'CONGESTED') AS congested_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'OVERLOADED') AS overloaded_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'RECOVERING') AS recovering_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'HANDOFF_AT_RISK') AS handoff_at_risk_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'QUEUE_CRITICAL') AS queue_critical_count,
+                COUNT(*) FILTER (WHERE expert_load_state = 'UNKNOWN') AS unknown_count,
+                ROUND(AVG(support_congestion_score)::numeric, 4) AS avg_congestion,
+                ROUND(AVG(operational_stability_score)::numeric, 4) AS avg_stability,
+                ROUND(AVG(human_support_integrity_score)::numeric, 4) AS avg_integrity,
+                ROUND(AVG(response_sustainability_score)::numeric, 4) AS avg_sustainability,
+                MAX(last_load_balancing_check) AS last_check
+            FROM pm_client_profiles
+            WHERE last_load_balancing_check IS NOT NULL
+        """)
+        if not rows:
+            return {"total_evaluated": 0}
+        r = rows[0]
+        return {
+            "total_evaluated": r["total_evaluated"],
+            "state_distribution": {
+                "BALANCED": r["balanced_count"],
+                "PRESSURED": r["pressured_count"],
+                "CONGESTED": r["congested_count"],
+                "OVERLOADED": r["overloaded_count"],
+                "RECOVERING": r["recovering_count"],
+                "HANDOFF_AT_RISK": r["handoff_at_risk_count"],
+                "QUEUE_CRITICAL": r["queue_critical_count"],
+                "UNKNOWN": r["unknown_count"],
+            },
+            "avg_congestion_score": float(r["avg_congestion"] or 0),
+            "avg_stability_score": float(r["avg_stability"] or 0),
+            "avg_integrity_score": float(r["avg_integrity"] or 0),
+            "avg_sustainability_score": float(r["avg_sustainability"] or 0),
+            "overloaded_count": r["overloaded_count"],
+            "queue_critical_count": r["queue_critical_count"],
+            "last_check": r["last_check"].isoformat() if r["last_check"] else None,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
