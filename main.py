@@ -535,6 +535,40 @@ async def _init_self_stabilizing_governance():
     except Exception as e:
         log.warning("[GOV_STAB] Self-Stabilizing Governance init failed (non-fatal): %s", e)
 
+async def _init_meta_continuity_loop():
+    """Phase 3.18 — Initialize MetaContinuityEngine. Fail-safe."""
+    try:
+        from meta_continuity_intelligence import init_meta_continuity_engine
+        import asyncpg
+        db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not db_url:
+            log.warning("[META_CONT] No DATABASE_URL found — skipped")
+            return
+        pool = await asyncpg.create_pool(db_url, min_size=1, max_size=2, command_timeout=30)
+        await init_meta_continuity_engine(pool)
+        log.info("[META_CONT] MetaContinuityEngine initialized in main")
+    except Exception as e:
+        log.warning("[META_CONT] Meta-Continuity init failed (non-fatal): %s", e)
+
+
+async def _meta_continuity_loop():
+    """Phase 3.18 — Center-wide background continuity loop. Runs every 10 min."""
+    await asyncio.sleep(300)
+    while True:
+        try:
+            from meta_continuity_intelligence import evaluate_meta_continuity
+            result = await evaluate_meta_continuity()
+            log.info(
+                "[META_CONT] state=%s health=%.3f sample=%s",
+                result.get("meta_continuity_state", "UNKNOWN"),
+                result.get("global_continuity_health_score", 0.0),
+                result.get("sample_size", 0),
+            )
+        except Exception as e:
+            log.debug("[META_CONT] loop error: %s", e)
+        await asyncio.sleep(600)
+
+
  
 
 
@@ -565,6 +599,8 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_adaptive_strategy())
         asyncio.create_task(_init_route_simulation())
         asyncio.create_task(_init_self_stabilizing_governance())
+        asyncio.create_task(_init_meta_continuity_loop())
+        asyncio.create_task(_meta_continuity_loop())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
