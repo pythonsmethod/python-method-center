@@ -833,6 +833,37 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
+        # Task 5.6 — Clinical Continuity Intelligence (analytical layer, no outbound sends)
+        # Runs after behaviour_eval and before scanner/dispatcher final packaging.
+        # This task NEVER sends messages directly.
+        # Central Orchestrator remains final authority.
+        async def continuity_task():
+            try:
+                from clinical_continuity_engine import get_continuity_engine
+                engine = get_continuity_engine()
+                if not engine:
+                    log.debug("[CONTINUITY] Engine not initialised — skipping continuity_task")
+                    return
+                result = await engine.evaluate_continuity(
+                    user_id=user_id,
+                    context_package=user_context,
+                )
+                # Attach result to context for dispatcher/governance enrichment
+                user_context["continuity_result"] = result.to_dict()
+                log.debug(
+                    "[CONTINUITY] continuity_task complete for user %s: state=%s score=%.2f",
+                    user_id, result.continuity_state, result.continuity_score,
+                )
+            except Exception as exc:
+                log.warning("[CONTINUITY] continuity_task error for user %s: %s", user_id, exc)
+
+        fire_and_forget(
+            task_type="continuity_eval",
+            user_id=user_id,
+            coro_factory=continuity_task,
+        )
+
+
         # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
