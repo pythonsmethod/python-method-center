@@ -488,6 +488,16 @@ async def _init_load_balancing_engine():
         log.warning("[LOAD_BALANCING] ExpertLoadBalancingEngine init failed (non-fatal): %s", e)
 
 
+async def _init_cognitive_orchestrator():
+    """Phase 3.13 — Initialize CentralCognitiveOrchestrator singleton. Fail-safe."""
+    try:
+        from central_cognitive_orchestrator import init_cognitive_orchestrator
+        await init_cognitive_orchestrator()
+        log.info("[COGNITIVE] CentralCognitiveOrchestrator initialized in main")
+    except Exception as e:
+        log.warning("[COGNITIVE] CentralCognitiveOrchestrator init failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -510,6 +520,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_orchestration_engine())
         asyncio.create_task(_init_pacing_engine())
         asyncio.create_task(_init_load_balancing_engine())
+        asyncio.create_task(_init_cognitive_orchestrator())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
