@@ -908,6 +908,53 @@ class MessagePipelineManager:
         )
 
 
+        # Task 5.8 — Rehabilitation State Machine (LOW priority, enriches dispatcher context)
+        # Runs AFTER trajectory_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
+        async def state_machine_task():
+            try:
+                from rehabilitation_state_machine import get_state_machine
+                sm = get_state_machine()
+                if sm:
+                    silence_resp  = getattr(self, '_silence_respected', False)
+                    human_esc     = getattr(self, '_human_escalation_active', False)
+                    rec_policy    = getattr(self, '_recovery_policy_active', False)
+                    profile_data  = context.get('profile', {}) if context else {}
+                    continuity_r  = context.get('continuity_result', {}) if context else {}
+                    trajectory_r  = context.get('trajectory_result', {}) if context else {}
+                    behaviour_r   = context.get('behaviour_result', {}) if context else {}
+                    risk_r        = context.get('risk_result', {}) if context else {}
+                    sm_result = await sm.evaluate_state(
+                        user_id=user_id,
+                        profile=profile_data,
+                        continuity_result=continuity_r,
+                        trajectory_result=trajectory_r,
+                        behaviour_result=behaviour_r,
+                        risk_result=risk_r,
+                        silence_respected=silence_resp,
+                        human_escalation=human_esc,
+                        recovery_policy_active=rec_policy,
+                    )
+                    if context is not None:
+                        context['state_machine_result'] = {
+                            'rehabilitation_state':   sm_result.rehabilitation_state,
+                            'rehabilitation_stage':   sm_result.rehabilitation_stage,
+                            'stage_completion_score': sm_result.stage_completion_score,
+                            'stage_stall_detected':   sm_result.stage_stall_detected,
+                            'progression_gate':       sm_result.progression_gate_status,
+                            'escalation_gate':        sm_result.escalation_gate_status,
+                            'next_allowed_states':    sm_result.next_allowed_states,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] State machine task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="state_machine_eval",
+            user_id=user_id,
+            coro_factory=state_machine_task,
+        )
+
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
