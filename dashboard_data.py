@@ -811,6 +811,58 @@ class DashboardData:
             log.warning("[DASHBOARD] get_multi_stage_orchestration_stats error: %s", e)
             return {}
 
+    async def get_pacing_stats(self) -> dict:
+        """Return Dynamic Pacing Intelligence stats for dashboard."""
+        try:
+            from dynamic_pacing_intelligence import get_pacing_engine
+            eng = get_pacing_engine()
+            if not eng:
+                return {"status": "not_initialized"}
+            pool = self._pool
+            if not pool:
+                return {"status": "no_db"}
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE pacing_state = 'SUSTAINABLE')  AS sustainable_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'ACCELERATING') AS accelerating_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'DECELERATING') AS decelerating_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'PAUSED')       AS paused_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'OVERLOADED')   AS overloaded_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'RECOVERING')   AS recovering_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'STALLED')      AS stalled_count,
+                        COUNT(*) FILTER (WHERE pacing_state = 'UNKNOWN')      AS unknown_count,
+                        COUNT(*) FILTER (WHERE adaptive_pause_needed = TRUE)  AS pause_needed_count,
+                        COUNT(*) FILTER (WHERE pacing_overload_risk >= 0.65)  AS high_overload_count,
+                        COUNT(*) FILTER (WHERE pacing_pressure_risk >= 0.60)  AS high_pressure_count,
+                        AVG(pacing_score) FILTER (WHERE pacing_score > 0)     AS avg_pacing_score,
+                        COUNT(*) FILTER (WHERE last_pacing_check IS NOT NULL) AS evaluated_count
+                    FROM pm_client_profiles
+                """)
+                if not row:
+                    return {}
+                return {
+                    "status": "ok",
+                    "pacing_states": {
+                        "sustainable":  int(row["sustainable_count"] or 0),
+                        "accelerating": int(row["accelerating_count"] or 0),
+                        "decelerating": int(row["decelerating_count"] or 0),
+                        "paused":       int(row["paused_count"] or 0),
+                        "overloaded":   int(row["overloaded_count"] or 0),
+                        "recovering":   int(row["recovering_count"] or 0),
+                        "stalled":      int(row["stalled_count"] or 0),
+                        "unknown":      int(row["unknown_count"] or 0),
+                    },
+                    "pause_needed_count":  int(row["pause_needed_count"] or 0),
+                    "high_overload_count": int(row["high_overload_count"] or 0),
+                    "high_pressure_count": int(row["high_pressure_count"] or 0),
+                    "avg_pacing_score":    float(row["avg_pacing_score"] or 0.0),
+                    "evaluated_count":     int(row["evaluated_count"] or 0),
+                }
+        except Exception as e:
+            log.warning("[DASHBOARD] get_pacing_stats error: %s", e)
+            return {}
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
