@@ -478,6 +478,18 @@ async def _init_pacing_engine():
         log.warning("[PACING] _init_pacing_engine failed (non-fatal): %s", e)
 
 
+async def _init_load_balancing_engine():
+    """Phase 3.12 — Initialize Expert Load Balancing Intelligence singleton. Fail-safe."""
+    try:
+        from expert_load_balancing_engine import init_load_balancing_engine
+        from database import get_db
+        db = get_db()
+        await init_load_balancing_engine(db=db)
+        log.info("[LOAD_BALANCING] ExpertLoadBalancingEngine initialized in main")
+    except Exception as e:
+        log.warning("[LOAD_BALANCING] ExpertLoadBalancingEngine init failed (non-fatal): %s", e)
+
+
 async def _start_pipeline_workers():
     """Start pipeline background workers. Called at startup if flag enabled."""
     try:
@@ -499,6 +511,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_state_machine())
         asyncio.create_task(_init_orchestration_engine())
         asyncio.create_task(_init_pacing_engine())
+        asyncio.create_task(_init_load_balancing_engine())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
