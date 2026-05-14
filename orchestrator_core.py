@@ -1154,6 +1154,58 @@ class MessagePipelineManager:
             coro_factory=central_cognitive_task,
         )
 
+
+        # Task 5.13 — Longitudinal Rehabilitation Modeling
+        async def longitudinal_modeling_task():
+            try:
+                from longitudinal_rehabilitation_modeling import get_longitudinal_modeling_engine
+                engine = get_longitudinal_modeling_engine()
+                result = await engine.analyze(user_id)
+                if result and result.get("long_term_rehabilitation_state") != "UNKNOWN":
+                    await db.execute(
+                        """
+                        UPDATE pm_client_profiles SET
+                            long_term_rehabilitation_state = $2,
+                            longitudinal_stability_score = $3,
+                            rehabilitation_resilience_score = $4,
+                            continuity_sustainability_score = $5,
+                            recurring_instability_detected = $6,
+                            disengagement_cycle_detected = $7,
+                            pacing_adaptation_quality = $8,
+                            recovery_after_disruption_score = $9,
+                            long_term_route_durability = $10,
+                            continuity_erosion_risk = $11,
+                            rehabilitation_persistence_score = $12,
+                            longitudinal_coherence_score = $13,
+                            longitudinal_notes = $14,
+                            last_longitudinal_check = $15
+                        WHERE user_id = $1
+                        """,
+                        str(user_id),
+                        result.get("long_term_rehabilitation_state"),
+                        result.get("longitudinal_stability_score", 0.0),
+                        result.get("rehabilitation_resilience_score", 0.0),
+                        result.get("continuity_sustainability_score", 0.0),
+                        result.get("recurring_instability_detected", False),
+                        result.get("disengagement_cycle_detected", False),
+                        result.get("pacing_adaptation_quality", 0.0),
+                        result.get("recovery_after_disruption_score", 0.0),
+                        result.get("long_term_route_durability", 0.0),
+                        result.get("continuity_erosion_risk", 0.0),
+                        result.get("rehabilitation_persistence_score", 0.0),
+                        result.get("longitudinal_coherence_score", 0.0),
+                        json.dumps(result.get("longitudinal_notes", {})),
+                        result.get("last_longitudinal_check"),
+                    )
+            except Exception as exc:
+                log.warning("[LONGITUDINAL] orchestrator task exception: %s", exc)
+
+        fire_and_forget(
+            task_type="longitudinal_eval",
+            user_id=user_id,
+            coro_factory=longitudinal_modeling_task,
+        )
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
