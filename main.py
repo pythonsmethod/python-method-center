@@ -525,7 +525,17 @@ async def _init_route_simulation():
         log.info("[ROUTE_SIM] RehabilitationRouteSimulationEngine initialized in main")
     except Exception as e:
         log.warning("[ROUTE_SIM] Route Simulation init failed (non-fatal): %s", e)
-        
+       
+async def _init_self_stabilizing_governance():
+    """Phase 3.17 — Initialize SelfStabilizingGovernanceEngine singleton. Fail-safe."""
+    try:
+        from self_stabilizing_governance import init_governance_stabilization_engine
+        await init_governance_stabilization_engine()
+        log.info("[GOV_STAB] SelfStabilizingGovernanceEngine initialized in main")
+    except Exception as e:
+        log.warning("[GOV_STAB] Self-Stabilizing Governance init failed (non-fatal): %s", e)
+
+ 
 
 
 async def _start_pipeline_workers():
@@ -554,6 +564,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_longitudinal_modeling())
         asyncio.create_task(_init_adaptive_strategy())
         asyncio.create_task(_init_route_simulation())
+        asyncio.create_task(_init_self_stabilizing_governance())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
