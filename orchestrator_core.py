@@ -1104,6 +1104,56 @@ class MessagePipelineManager:
             coro_factory=load_balancing_task,
         )
 
+        # Task 5.12 — Central Cognitive Orchestrator (LOW priority, synthesizes all engine outputs)
+        # Runs AFTER load_balancing_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never send messages, override governance, make medical decisions,
+        #            create urgency, force progression, or destabilize system coherence
+        async def central_cognitive_task():
+            try:
+                from central_cognitive_orchestrator import get_cognitive_orchestrator
+                orch = get_cognitive_orchestrator()
+                if orch:
+                    # Respect governance hierarchy — never override higher layers
+                    human_esc = context.get("human_escalation_active", False)
+                    silence = context.get("silence_respected", False)
+                    if human_esc or silence:
+                        return  # governance layers take absolute priority
+
+                    # Build full context from all prior pipeline results
+                    cognitive_ctx = {
+                        "risk_score": context.get("risk_score", 0.0),
+                        "engagement_score": context.get("engagement_score", 0.5),
+                        "continuity_risk": context.get("continuity_risk", 0.0),
+                        "trajectory_drift": context.get("trajectory_drift", 0.0),
+                        "recovery_trend": context.get("recovery_trend", 0.0),
+                        "human_escalation_active": human_esc,
+                        "silence_respected": silence,
+                        "recovery_policy_active": context.get("recovery_policy_active", False),
+                        "orchestration_result": context.get("orchestration_result", {}),
+                        "pacing_result": context.get("pacing_result", {}),
+                        "load_balancing_result": context.get("load_balancing_result", {}),
+                    }
+                    result = await orch.evaluate_system_coherence(
+                        user_id=user_id,
+                        context=cognitive_ctx,
+                    )
+                    if context is not None:
+                        context["cognitive_result"] = {
+                            "system_coherence_state": result.system_coherence_state,
+                            "dominant_operational_priority": result.dominant_operational_priority,
+                            "governance_conflict_detected": result.governance_conflict_detected,
+                            "overload_chain_detected": result.overload_chain_detected,
+                            "overall_system_stability_score": result.overall_system_stability_score,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] CentralCognitive task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="cognitive_eval",
+            user_id=user_id,
+            coro_factory=central_cognitive_task,
+        )
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
