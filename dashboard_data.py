@@ -1047,3 +1047,94 @@ async def get_longitudinal_modeling_stats(db) -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+def get_adaptive_strategy_stats():
+    try:
+        import psycopg2
+        import json as _json
+        conn = psycopg2.connect(__import__('os').environ.get('DATABASE_URL', ''))
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        adaptive_strategy_state,
+                        recommended_continuity_strategy,
+                        strategy_confidence_score,
+                        strategy_stability_score,
+                        strategy_shift_needed,
+                        continuity_support_mode,
+                        longitudinal_strategy_fit,
+                        emotional_safety_strategy_fit,
+                        expert_handoff_strategy_fit,
+                        last_strategy_check
+                    FROM pm_client_profiles
+                    WHERE last_strategy_check IS NOT NULL
+                    ORDER BY last_strategy_check DESC
+                    LIMIT 1000
+                """)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        state_dist = {}
+        strategy_dist = {}
+        mode_dist = {"active": 0, "standby": 0, "hold": 0}
+        conf_vals = []
+        stab_vals = []
+        long_fit_vals = []
+        emo_fit_vals = []
+        expert_fit_vals = []
+        shift_count = 0
+        last_check = None
+
+        for row in rows:
+            (state, strategy, conf, stab, shift, mode,
+             long_fit, emo_fit, expert_fit, check_ts) = row
+            if state:
+                state_dist[state] = state_dist.get(state, 0) + 1
+            if strategy:
+                strategy_dist[strategy] = strategy_dist.get(strategy, 0) + 1
+            if mode and mode in mode_dist:
+                mode_dist[mode] += 1
+            if conf is not None:
+                conf_vals.append(float(conf))
+            if stab is not None:
+                stab_vals.append(float(stab))
+            if long_fit is not None:
+                long_fit_vals.append(float(long_fit))
+            if emo_fit is not None:
+                emo_fit_vals.append(float(emo_fit))
+            if expert_fit is not None:
+                expert_fit_vals.append(float(expert_fit))
+            if shift:
+                shift_count += 1
+            if check_ts and (last_check is None or check_ts > last_check):
+                last_check = check_ts
+
+        def safe_avg(lst):
+            return round(sum(lst) / len(lst), 4) if lst else 0.0
+
+        return {
+            "engine": "AdaptiveRehabilitationStrategyEngine",
+            "phase": "3.15",
+            "total_evaluated": len(rows),
+            "strategy_state_distribution": state_dist,
+            "strategy_distribution": strategy_dist,
+            "avg_confidence_score": safe_avg(conf_vals),
+            "avg_stability_score": safe_avg(stab_vals),
+            "shift_needed_count": shift_count,
+            "continuity_support_mode_distribution": mode_dist,
+            "avg_longitudinal_fit": safe_avg(long_fit_vals),
+            "avg_emotional_safety_fit": safe_avg(emo_fit_vals),
+            "avg_expert_handoff_fit": safe_avg(expert_fit_vals),
+            "last_check": last_check.isoformat() if last_check else None,
+        }
+    except Exception as exc:
+        log.debug("[DASHBOARD] get_adaptive_strategy_stats exception: %s", exc)
+        return {
+            "engine": "AdaptiveRehabilitationStrategyEngine",
+            "phase": "3.15",
+            "total_evaluated": 0,
+            "error": str(exc),
+        }
