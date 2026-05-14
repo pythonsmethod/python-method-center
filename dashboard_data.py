@@ -759,6 +759,58 @@ class DashboardData:
             log.warning("[DASHBOARD] get_state_machine_stats error: %s", e)
             return {}
 
+    async def get_multi_stage_orchestration_stats(self) -> dict:
+        """Return Multi-Stage Orchestration Engine stats for dashboard."""
+        try:
+            from multi_stage_orchestration_engine import get_orchestration_engine
+            eng = get_orchestration_engine()
+            if not eng:
+                return {"status": "not_initialized"}
+            pool = self._pool
+            if not pool:
+                return {"status": "no_db"}
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE orchestration_state = 'CLEAR')             AS clear_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'MULTI_ACTIVE')       AS multi_active_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'CONFLICT')           AS conflict_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'OVERLOADED')         AS overloaded_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'HANDOFF_READY')      AS handoff_ready_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'BLOCKED')            AS blocked_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'ESCALATION_NEEDED')  AS escalation_needed_count,
+                        COUNT(*) FILTER (WHERE orchestration_state = 'UNKNOWN')            AS unknown_count,
+                        COUNT(*) FILTER (WHERE stage_conflict_detected = TRUE)             AS conflict_total,
+                        COUNT(*) FILTER (WHERE handoff_ready = TRUE)                       AS handoff_total,
+                        COUNT(*) FILTER (WHERE route_overload_score >= 0.70)               AS high_overload_count,
+                        AVG(route_overload_score) FILTER (WHERE route_overload_score > 0)  AS avg_overload_score,
+                        COUNT(*) FILTER (WHERE last_orchestration_check IS NOT NULL)       AS evaluated_count
+                    FROM pm_client_profiles
+                """)
+                if not row:
+                    return {}
+                return {
+                    "status": "ok",
+                    "orchestration_states": {
+                        "clear":             int(row["clear_count"] or 0),
+                        "multi_active":      int(row["multi_active_count"] or 0),
+                        "conflict":          int(row["conflict_count"] or 0),
+                        "overloaded":        int(row["overloaded_count"] or 0),
+                        "handoff_ready":     int(row["handoff_ready_count"] or 0),
+                        "blocked":           int(row["blocked_count"] or 0),
+                        "escalation_needed": int(row["escalation_needed_count"] or 0),
+                        "unknown":           int(row["unknown_count"] or 0),
+                    },
+                    "conflict_total":      int(row["conflict_total"] or 0),
+                    "handoff_total":       int(row["handoff_total"] or 0),
+                    "high_overload_count": int(row["high_overload_count"] or 0),
+                    "avg_overload_score":  float(row["avg_overload_score"] or 0.0),
+                    "evaluated_count":     int(row["evaluated_count"] or 0),
+                }
+        except Exception as e:
+            log.warning("[DASHBOARD] get_multi_stage_orchestration_stats error: %s", e)
+            return {}
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
