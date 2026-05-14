@@ -514,8 +514,18 @@ async def _init_adaptive_strategy():
         await init_adaptive_strategy_engine()
         log.info("[STRATEGY] AdaptiveRehabilitationStrategyEngine initialized in main")
     except Exception as e:
-        log.warning("[STRATEGY] Adaptive Strategy init failed (non-fatal): %s", e)
+                log.warning("[STRATEGY] Adaptive Strategy init failed (non-fatal): %s", e)
+        
 
+async def _init_route_simulation():
+    """Phase 3.16 — Initialize RehabilitationRouteSimulationEngine singleton. Fail-safe."""
+    try:
+        from rehabilitation_route_simulation import init_route_simulation_engine
+        await init_route_simulation_engine()
+        log.info("[ROUTE_SIM] RehabilitationRouteSimulationEngine initialized in main")
+    except Exception as e:
+        log.warning("[ROUTE_SIM] Route Simulation init failed (non-fatal): %s", e)
+        
 
 
 async def _start_pipeline_workers():
@@ -543,6 +553,7 @@ async def _start_pipeline_workers():
         asyncio.create_task(_init_cognitive_orchestrator())
         asyncio.create_task(_init_longitudinal_modeling())
         asyncio.create_task(_init_adaptive_strategy())
+        asyncio.create_task(_init_route_simulation())
     except Exception as e:
         log.error("[PIPELINE] Worker start FAILED: %s", e)
         log.error("[PIPELINE] Traceback: %s", _traceback.format_exc())
