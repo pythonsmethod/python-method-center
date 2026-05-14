@@ -955,6 +955,53 @@ class MessagePipelineManager:
         )
 
 
+# Task 5.9 — Multi-Stage Orchestration Engine (LOW priority, enriches dispatcher context)
+        # Runs AFTER state_machine_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never send messages, override state machine, or call dispatcher
+        async def orchestration_task():
+            try:
+                from multi_stage_orchestration_engine import get_orchestration_engine
+                orch_eng = get_orchestration_engine()
+                if orch_eng:
+                    silence_resp     = getattr(self, '_silence_respected', False)
+                    human_esc        = getattr(self, '_human_escalation_active', False)
+                    rec_policy       = getattr(self, '_recovery_policy_active', False)
+                    profile_data     = context.get('profile', {}) if context else {}
+                    sm_result        = context.get('state_machine_result', {}) if context else {}
+                    traj_r           = context.get('trajectory_result', {}) if context else {}
+                    cont_r           = context.get('continuity_result', {}) if context else {}
+                    beh_r            = context.get('behaviour_result', {}) if context else {}
+                    orch_result = await orch_eng.evaluate_orchestration(
+                        user_id=user_id,
+                        state_machine_result=sm_result,
+                        trajectory_result=traj_r,
+                        continuity_result=cont_r,
+                        behaviour_result=beh_r,
+                        profile_data=profile_data,
+                        human_escalation=human_esc,
+                        silence_respected=silence_resp,
+                        recovery_policy_active=rec_policy,
+                    )
+                    if context is not None:
+                        context['orchestration_result'] = {
+                            'orchestration_state':       orch_result.orchestration_state,
+                            'current_primary_stage':     orch_result.current_primary_stage,
+                            'active_stage_count':        orch_result.active_stage_count,
+                            'stage_conflict_detected':   orch_result.stage_conflict_detected,
+                            'route_overload_score':      orch_result.route_overload_score,
+                            'next_orchestration_action': orch_result.next_orchestration_action,
+                            'handoff_ready':             orch_result.handoff_ready,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] Orchestration task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="orchestration_eval",
+            user_id=user_id,
+            coro_factory=orchestration_task,
+        )
+
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
