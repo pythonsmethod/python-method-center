@@ -482,9 +482,7 @@ async def _init_load_balancing_engine():
     """Phase 3.12 — Initialize Expert Load Balancing Intelligence singleton. Fail-safe."""
     try:
         from expert_load_balancing_engine import init_load_balancing_engine
-        from database import get_db
-        db = get_db()
-        await init_load_balancing_engine(db=db)
+        await init_load_balancing_engine()
         log.info("[LOAD_BALANCING] ExpertLoadBalancingEngine initialized in main")
     except Exception as e:
         log.warning("[LOAD_BALANCING] ExpertLoadBalancingEngine init failed (non-fatal): %s", e)
