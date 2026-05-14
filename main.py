@@ -894,6 +894,19 @@ async def risk_governance():
             result["recovery_governance"] = await dash.get_recovery_governance()
         except Exception as e:
             result["recovery_governance"] = {"error": str(e)}
+        # Phase 3.19: Institutional Memory dashboard stats
+        try:
+            from dashboard_data import get_institutional_memory_stats
+            import asyncpg as _asyncpg
+            _im_db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+            if _im_db_url:
+                _im_pool = await _asyncpg.create_pool(_im_db_url, min_size=1, max_size=1, command_timeout=10)
+                result["institutional_memory"] = await get_institutional_memory_stats(_im_pool)
+                await _im_pool.close()
+            else:
+                result["institutional_memory"] = {"engine": "InstitutionalMemoryEngine", "error": "no_db"}
+        except Exception as e:
+            result["institutional_memory"] = {"engine": "InstitutionalMemoryEngine", "error": str(e)}
         return JSONResponse(content=result)
     except Exception as e:
         log.error("[API] /risk/governance error: %s", e)
@@ -902,6 +915,7 @@ async def risk_governance():
 
 @app.on_event("startup")
 async def on_startup():
+    log.info("[STARTUP] Phase 3.19 InstitutionalMemoryEngine — background-only, fail-safe, neutral_result on all exceptions")
     log.info("[STARTUP] USE_NEW_MESSAGE_PIPELINE=%s PIPELINE_SHADOW_MODE=%s",
              USE_NEW_MESSAGE_PIPELINE, PIPELINE_SHADOW_MODE)
     if USE_NEW_MESSAGE_PIPELINE or PIPELINE_SHADOW_MODE:
