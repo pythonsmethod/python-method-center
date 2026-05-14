@@ -1253,6 +1253,34 @@ class MessagePipelineManager:
             coro_factory=route_simulation_task,
         )
 
+        # Task 5.16 — Self-Stabilizing Governance Engine (LOW priority, read-only observer)
+        # Runs AFTER route_simulation_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never send messages, override governance, change route states,
+        #            make medical conclusions, bypass dispatcher, or create urgency
+        async def self_stabilizing_governance_task():
+            try:
+                from self_stabilizing_governance import evaluate_governance_stabilization
+                # Governance check: human_escalation > silence_respect always take priority
+                human_esc = context.get("human_escalation_active", False)
+                silence = context.get("silence_respected", False)
+                if human_esc or silence:
+                    return  # governance layers take absolute priority
+                gov_result = await evaluate_governance_stabilization(context)
+                if gov_result and not gov_result.get("is_neutral", True):
+                    context["governance_stabilization"] = gov_result
+                    context["governance_stability_state"] = gov_result.get("governance_stability_state", "UNKNOWN")
+                    context["stabilization_needed"] = gov_result.get("stabilization_needed", False)
+                    context["recommended_stabilization_mode"] = gov_result.get("recommended_stabilization_mode", "no_change")
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] self_stabilizing_governance_task exception (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="governance_stabilization_eval",
+            user_id=user_id,
+            coro_factory=self_stabilizing_governance_task,
+        )
+
+
 
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
