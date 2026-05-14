@@ -625,6 +625,65 @@ class DashboardData:
             return {}
 
 
+
+    async def get_trajectory_stats(self) -> dict:
+        """Return Trajectory Intelligence Engine stats for dashboard."""
+        try:
+            from trajectory_intelligence_engine import get_trajectory_engine
+            engine = get_trajectory_engine()
+            if not engine:
+                return {"status": "not_initialized"}
+            pool = self._pool
+            if not pool:
+                return {"status": "no_db"}
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE trajectory_state = 'accelerating_progression') AS accelerating,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'steady_progression') AS steady,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'stable_plateau') AS plateau,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'oscillating_active') AS oscillating_active,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'oscillating_at_risk') AS oscillating_at_risk,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'follow_through_gap') AS follow_through_gap,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'coherence_break') AS coherence_break,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'degrading') AS degrading,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'disengagement_trajectory') AS disengagement,
+                        COUNT(*) FILTER (WHERE trajectory_state = 'needs_trajectory_review') AS needs_review,
+                        COUNT(*) FILTER (WHERE trajectory_gap_detected = TRUE) AS gap_detected,
+                        ROUND(AVG(trajectory_score)::numeric, 4) AS avg_score,
+                        COUNT(*) FILTER (WHERE trajectory_direction = 'improving') AS improving,
+                        COUNT(*) FILTER (WHERE trajectory_direction = 'declining') AS declining,
+                        COUNT(*) FILTER (WHERE trajectory_direction = 'stable') AS stable,
+                        COUNT(*) FILTER (WHERE last_trajectory_check IS NOT NULL) AS evaluated_total
+                    FROM pm_client_profiles
+                """)
+                return {
+                    "status": "ok",
+                    "states": {
+                        "accelerating_progression":  int(row["accelerating"] or 0),
+                        "steady_progression":         int(row["steady"] or 0),
+                        "stable_plateau":             int(row["plateau"] or 0),
+                        "oscillating_active":         int(row["oscillating_active"] or 0),
+                        "oscillating_at_risk":        int(row["oscillating_at_risk"] or 0),
+                        "follow_through_gap":         int(row["follow_through_gap"] or 0),
+                        "coherence_break":            int(row["coherence_break"] or 0),
+                        "degrading":                  int(row["degrading"] or 0),
+                        "disengagement_trajectory":   int(row["disengagement"] or 0),
+                        "needs_trajectory_review":    int(row["needs_review"] or 0),
+                    },
+                    "gap_detected_count": int(row["gap_detected"] or 0),
+                    "avg_trajectory_score": float(row["avg_score"] or 0),
+                    "directions": {
+                        "improving": int(row["improving"] or 0),
+                        "declining": int(row["declining"] or 0),
+                        "stable":    int(row["stable"] or 0),
+                    },
+                    "evaluated_total": int(row["evaluated_total"] or 0),
+                }
+        except Exception as e:
+            log.warning("[DASHBOARD] get_trajectory_stats error: %s", e)
+            return {}
+
 _dashboard: Optional[DashboardData] = None
 
 def get_dashboard() -> DashboardData:
