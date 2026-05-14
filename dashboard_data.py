@@ -1233,3 +1233,60 @@ async def get_governance_stabilization_stats() -> dict:
     except Exception as exc:
         log.debug("[DASHBOARD] get_governance_stabilization_stats exception: %s", exc)
         return {"engine": "SelfStabilizingGovernanceEngine", "phase": "3.17", "total_evaluated": 0}
+
+
+async def get_meta_continuity_stats(pool) -> dict:
+    """Phase 3.18: Meta-Continuity Intelligence — center-wide continuity stats.
+    Returns latest row from pm_center_continuity_metrics.
+    Read-only. No individual client data. No outbound calls.
+    Returns neutral dict on any exception.
+    """
+    neutral = {
+        "engine": "MetaContinuityEngine",
+        "phase": "3.18",
+        "meta_continuity_state": "UNKNOWN",
+        "global_continuity_health_score": 0.0,
+        "center_route_stability_score": 0.0,
+        "systemic_disengagement_score": 0.0,
+        "systemic_overload_score": 0.0,
+        "pacing_sustainability_score": 0.0,
+        "governance_stability_score": 0.0,
+        "continuity_erosion_cluster_detected": False,
+        "recovery_pattern_strength": 0.0,
+        "strategy_effectiveness_signal": 0.0,
+        "route_durability_signal": 0.0,
+        "center_silence_integrity_score": 0.0,
+        "dispatcher_alignment_score": 0.0,
+        "sample_size": 0,
+        "checked_at": None,
+    }
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM pm_center_continuity_metrics ORDER BY checked_at DESC LIMIT 1"
+            )
+            if not row:
+                return neutral
+            def safe_round(v):
+                return round(float(v), 4) if v is not None else 0.0
+            return {
+                "engine": "MetaContinuityEngine",
+                "phase": "3.18",
+                "meta_continuity_state": row.get("meta_continuity_state", "UNKNOWN"),
+                "global_continuity_health_score": safe_round(row.get("global_continuity_health_score")),
+                "center_route_stability_score": safe_round(row.get("center_route_stability_score")),
+                "systemic_disengagement_score": safe_round(row.get("systemic_disengagement_score")),
+                "systemic_overload_score": safe_round(row.get("systemic_overload_score")),
+                "pacing_sustainability_score": safe_round(row.get("pacing_sustainability_score")),
+                "governance_stability_score": safe_round(row.get("governance_stability_score")),
+                "continuity_erosion_cluster_detected": bool(row.get("continuity_erosion_cluster_detected", False)),
+                "recovery_pattern_strength": safe_round(row.get("recovery_pattern_strength")),
+                "strategy_effectiveness_signal": safe_round(row.get("strategy_effectiveness_signal")),
+                "route_durability_signal": safe_round(row.get("route_durability_signal")),
+                "center_silence_integrity_score": safe_round(row.get("center_silence_integrity_score")),
+                "dispatcher_alignment_score": safe_round(row.get("dispatcher_alignment_score")),
+                "sample_size": int(row.get("sample_size", 0) or 0),
+                "checked_at": str(row.get("checked_at")) if row.get("checked_at") else None,
+            }
+    except Exception as exc:
+        return neutral
