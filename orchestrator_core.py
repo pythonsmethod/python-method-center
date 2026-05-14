@@ -1002,6 +1002,55 @@ class MessagePipelineManager:
         )
 
 
+# Task 5.10 — Dynamic Pacing Intelligence (LOW priority, enriches dispatcher context)
+        # Runs AFTER orchestration_task, BEFORE dispatcher_task
+        # IMMUTABLE: must never send messages, force pacing, or create urgency
+        async def pacing_task():
+            try:
+                from dynamic_pacing_intelligence import get_pacing_engine
+                pacing_eng = get_pacing_engine()
+                if pacing_eng:
+                    silence_resp     = getattr(self, '_silence_respected', False)
+                    human_esc        = getattr(self, '_human_escalation_active', False)
+                    rec_policy       = getattr(self, '_recovery_policy_active', False)
+                    profile_data     = context.get('profile', {}) if context else {}
+                    sm_result        = context.get('state_machine_result', {}) if context else {}
+                    traj_r           = context.get('trajectory_result', {}) if context else {}
+                    cont_r           = context.get('continuity_result', {}) if context else {}
+                    beh_r            = context.get('behaviour_result', {}) if context else {}
+                    orch_r           = context.get('orchestration_result', {}) if context else {}
+                    pacing_result = await pacing_eng.evaluate_pacing(
+                        user_id=user_id,
+                        state_machine_result=sm_result,
+                        trajectory_result=traj_r,
+                        continuity_result=cont_r,
+                        behaviour_result=beh_r,
+                        orchestration_result=orch_r,
+                        profile_data=profile_data,
+                        human_escalation=human_esc,
+                        silence_respected=silence_resp,
+                        recovery_policy_active=rec_policy,
+                    )
+                    if context is not None:
+                        context['pacing_result'] = {
+                            'pacing_state':              pacing_result.pacing_state,
+                            'pacing_score':              pacing_result.pacing_score,
+                            'adaptive_pause_needed':     pacing_result.adaptive_pause_needed,
+                            'recommended_route_speed':   pacing_result.recommended_route_speed,
+                            'safe_next_step_delay':      pacing_result.safe_next_step_delay,
+                            'pacing_pressure_risk':      pacing_result.pacing_pressure_risk,
+                            'pacing_overload_risk':      pacing_result.pacing_overload_risk,
+                        }
+            except Exception as exc:
+                log.debug("[PIPELINE_BG] Pacing task error (non-fatal): %s", exc)
+
+        await self.async_worker.fire_and_forget(
+            task_type="pacing_eval",
+            user_id=user_id,
+            coro_factory=pacing_task,
+        )
+
+
 # Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
