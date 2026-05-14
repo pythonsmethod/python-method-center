@@ -923,3 +923,58 @@ async def get_load_balancing_stats(db) -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+async def get_cognitive_orchestrator_stats(db) -> dict:
+    """
+    Phase 3.13 — Central Cognitive Orchestrator dashboard stats.
+    Returns aggregate metrics for system coherence state distribution.
+    Fail-safe: returns error dict on any exception.
+    """
+    try:
+        rows = await db.fetch("""
+            SELECT
+                COUNT(*) AS total_evaluated,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'COHERENT') AS coherent_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'DRIFT_DETECTED') AS drift_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'CONFLICT_DETECTED') AS conflict_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'OVERLOAD_CHAIN') AS overload_chain_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'INSTABILITY') AS instability_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'GOVERNANCE_BREACH_RISK') AS governance_risk_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'ESCALATION_REQUIRED') AS escalation_required_count,
+                COUNT(*) FILTER (WHERE system_coherence_state = 'RECOVERING') AS recovering_count,
+                COUNT(*) FILTER (WHERE governance_conflict_detected = TRUE) AS governance_conflicts,
+                COUNT(*) FILTER (WHERE overload_chain_detected = TRUE) AS overload_chains,
+                ROUND(AVG(overall_system_stability_score)::numeric, 4) AS avg_stability,
+                ROUND(AVG(operational_drift_score)::numeric, 4) AS avg_drift,
+                ROUND(AVG(continuity_integrity_score)::numeric, 4) AS avg_continuity_integrity,
+                ROUND(AVG(emotional_safety_integrity_score)::numeric, 4) AS avg_emotional_safety,
+                MAX(last_cognitive_orchestrator_check) AS last_check
+            FROM pm_client_profiles
+            WHERE last_cognitive_orchestrator_check IS NOT NULL
+        """)
+        if not rows:
+            return {"total_evaluated": 0}
+        r = rows[0]
+        return {
+            "total_evaluated": r["total_evaluated"],
+            "state_distribution": {
+                "COHERENT": r["coherent_count"],
+                "DRIFT_DETECTED": r["drift_count"],
+                "CONFLICT_DETECTED": r["conflict_count"],
+                "OVERLOAD_CHAIN": r["overload_chain_count"],
+                "INSTABILITY": r["instability_count"],
+                "GOVERNANCE_BREACH_RISK": r["governance_risk_count"],
+                "ESCALATION_REQUIRED": r["escalation_required_count"],
+                "RECOVERING": r["recovering_count"],
+            },
+            "governance_conflicts_detected": r["governance_conflicts"],
+            "overload_chains_detected": r["overload_chains"],
+            "avg_stability_score": float(r["avg_stability"] or 0),
+            "avg_drift_score": float(r["avg_drift"] or 0),
+            "avg_continuity_integrity": float(r["avg_continuity_integrity"] or 0),
+            "avg_emotional_safety_integrity": float(r["avg_emotional_safety"] or 0),
+            "last_check": r["last_check"].isoformat() if r["last_check"] else None,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
