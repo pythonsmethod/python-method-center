@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# PHASE 3 — Central Orchestrator Architecture
+# PHASE 3 â Central Orchestrator Architecture
 # Module: orchestrator_core.py
 # Python Method Digital Rehabilitation Center
 #
@@ -9,22 +9,22 @@
 #          Single entry point: OrchestratorCore.handle_message()
 #
 # Execution pipeline (per message):
-#   Step 0  build_context_package()     — assemble full context snapshot
-#   Step 1  state_engine.analyze()      — detect intent + state + risk
-#   Step 2  route_resolver.resolve()    — recommend optimal route (observe only)
-#   Step 3  route_lock_manager.check()  — enforce active locks
-#   Step 4  interrupt_detector.scan()   — detect critical interrupts
-#   Step 5  priority_engine.rank()      — resolve interrupt/route priority
-#   Step 6  auto_router.apply()         — apply safe automatic route switches
-#   Step 7  agent_selector.select()     — select single active agent
-#   Step 8  emotional_overlay.detect()  — inject emotional intelligence layer
-#   Step 9  escalation_manager.check()  — decide AI vs human escalation
-#   Step 10 response_validator.pre()    — validate prompt before generation
-#   Step 11 ask_claude() / escalate     — generate AI response or escalate
-#   Step 12 response_validator.post()   — validate generated response
-#   Step 13 memory_writer.write()       — update long-term memory
-#   Step 14 orchestration_logger.log()  — persist orchestration event
-#   Step 15 save_session()              — persist session state
+#   Step 0  build_context_package()     â assemble full context snapshot
+#   Step 1  state_engine.analyze()      â detect intent + state + risk
+#   Step 2  route_resolver.resolve()    â recommend optimal route (observe only)
+#   Step 3  route_lock_manager.check()  â enforce active locks
+#   Step 4  interrupt_detector.scan()   â detect critical interrupts
+#   Step 5  priority_engine.rank()      â resolve interrupt/route priority
+#   Step 6  auto_router.apply()         â apply safe automatic route switches
+#   Step 7  agent_selector.select()     â select single active agent
+#   Step 8  emotional_overlay.detect()  â inject emotional intelligence layer
+#   Step 9  escalation_manager.check()  â decide AI vs human escalation
+#   Step 10 response_validator.pre()    â validate prompt before generation
+#   Step 11 ask_claude() / escalate     â generate AI response or escalate
+#   Step 12 response_validator.post()   â validate generated response
+#   Step 13 memory_writer.write()       â update long-term memory
+#   Step 14 orchestration_logger.log()  â persist orchestration event
+#   Step 15 save_session()              â persist session state
 #
 # Critical invariants (enforced by this module):
 #   - NEVER more than one active agent at the same time
@@ -133,7 +133,7 @@ class OrchestrationResult:
 
 
 # ---------------------------------------------------------------------------
-# OrchestratorCore — main class
+# OrchestratorCore â main class
 # ---------------------------------------------------------------------------
 class OrchestratorCore:
     """
@@ -146,7 +146,7 @@ class OrchestratorCore:
         session = result.session
 
     Thread safety: Each handle_message() call is independent.
-    State is NOT stored on the instance — it is passed in via session dict.
+    State is NOT stored on the instance â it is passed in via session dict.
     """
 
     def __init__(self):
@@ -230,7 +230,7 @@ class OrchestratorCore:
             log.debug("[ORCH S1] intent=%s state=%s risk=%.2f", intent, user_state, risk_score)
 
             # ---------------------------------------------------------------
-            # STEP 2: Route resolver (observation — does NOT switch route)
+            # STEP 2: Route resolver (observation â does NOT switch route)
             # ---------------------------------------------------------------
             route_result = resolve_route(intent, user_state, risk_score, session)
             proposed_route = route_result.get("proposed_route", session.get("route", "reception"))
@@ -331,7 +331,7 @@ class OrchestratorCore:
                 reply = await self.esc_mgr.handle_escalation(
                     esc_result, context_package, session
                 )
-                log.info("[ORCH S11] escalated: %s — reply: %s...", escalation_reason, reply[:60])
+                log.info("[ORCH S11] escalated: %s â reply: %s...", escalation_reason, reply[:60])
             else:
                 # Pre-validation of prompt
                 pre_valid = self.validator.validate_prompt(agent_system_prompt, session)
@@ -348,7 +348,7 @@ class OrchestratorCore:
                         )
                     except Exception as _ce:
                         log.error("[ORCH S11] ask_claude error: %s", _ce)
-                        reply = "Извините, произошла временная ошибка. Попробуйте ещё раз."
+                        reply = "ÐÐ·Ð²Ð¸Ð½Ð¸ÑÐµ, Ð¿ÑÐ¾Ð¸Ð·Ð¾ÑÐ»Ð° Ð²ÑÐµÐ¼ÐµÐ½Ð½Ð°Ñ Ð¾ÑÐ¸Ð±ÐºÐ°. ÐÐ¾Ð¿ÑÐ¾Ð±ÑÐ¹ÑÐµ ÐµÑÑ ÑÐ°Ð·."
                 else:
                     reply = "[ORCHESTRATOR] No AI runtime provided. Configure ask_claude_fn."
 
@@ -414,7 +414,7 @@ class OrchestratorCore:
 
         except Exception as _ex:
             log.error("[ORCH FATAL] Unhandled error in handle_message: %s", traceback.format_exc())
-            reply = reply or "Извините, произошла ошибка. Специалист уже получил уведомление."
+            reply = reply or "ÐÐ·Ð²Ð¸Ð½Ð¸ÑÐµ, Ð¿ÑÐ¾Ð¸Ð·Ð¾ÑÐ»Ð° Ð¾ÑÐ¸Ð±ÐºÐ°. Ð¡Ð¿ÐµÑÐ¸Ð°Ð»Ð¸ÑÑ ÑÐ¶Ðµ Ð¿Ð¾Ð»ÑÑÐ¸Ð» ÑÐ²ÐµÐ´Ð¾Ð¼Ð»ÐµÐ½Ð¸Ðµ."
             validation_passed = False
             validation_issues.append("fatal_error: " + str(_ex))
 
@@ -451,7 +451,7 @@ class OrchestratorCore:
 
 
 # ---------------------------------------------------------------------------
-# Singleton accessor (optional — for direct import in agents.py)
+# Singleton accessor (optional â for direct import in agents.py)
 # ---------------------------------------------------------------------------
 _ORCHESTRATOR: Optional[OrchestratorCore] = None
 
@@ -464,7 +464,7 @@ def get_orchestrator() -> OrchestratorCore:
 
 
 # =============================================================================
-# PHASE 3.1A — Message Queue Pipeline Integration
+# PHASE 3.1A â Message Queue Pipeline Integration
 # Wraps OrchestratorCore with:
 #   message_queue -> debounce -> batch -> orchestrator
 #   -> stale_guard -> send -> async background tasks
@@ -529,7 +529,7 @@ class MessagePipelineManager:
                        chat_id: int, raw_update: Optional[Dict] = None) -> None:
         """
         Entry point for every incoming Telegram message.
-        Returns immediately — processing happens in background.
+        Returns immediately â processing happens in background.
         """
         # Track sequence
         self._sequence[user_id] = self._sequence.get(user_id, 0) + 1
@@ -593,12 +593,43 @@ class MessagePipelineManager:
                                   batch: MessageBatch):
         """
         Full orchestration pipeline for a debounced message batch.
+        Phase 4 Step 2: loads real session, passes real AI + save functions.
         """
-        # ------------------------------------------------------------------
-        # FAST PATH: Check if this is a simple intent (bypass LLM)
-        # ------------------------------------------------------------------
-        session_hint = None  # Would load from DB in production
-        fast_intent, fast_response = fast_path_resolver.resolve(text, session_hint)
+        # CONTACT_ID / USER_ID SAFETY (TASK 6)
+        _contact_id = None
+        if raw_update:
+            _contact_id = raw_update.get("contact_id") or raw_update.get("chat_id")
+        if not _contact_id:
+            _contact_id = str(chat_id)
+        # SESSION LOADING (TASK 2)
+        try:
+            import asyncio as _asyncio
+            from agents import load_session as _load_session
+            _session = await _asyncio.to_thread(_load_session, _contact_id)
+            log.debug("[PIPELINE] Session loaded contact=%s route=%s", _contact_id, _session.get("route","?"))
+        except Exception as _se:
+            log.warning("[PIPELINE] Session load failed contact=%s: %s", _contact_id, _se)
+            _session = {"route":"reception","history":[],"awaiting_confirmation":False,"agent_current":"Lucky","risk_score":0.0,"hang_stage":None,"payment_status":"new","current_intent":"question","current_state":"new","proposed_route":"reception","proposed_agent":"Lucky","route_confidence":0.0,"route_reason":"","previous_route":"reception","transition_reason":"","route_transition_log":[],"route_last_switch_msg":0,"overlay_last_high_msg":0,"overlay_consecutive_empathy":0,"overlay_history":[],"trust_entered_at_msg":0}
+        # AI RUNTIME INJECTION (TASK 3)
+        try:
+            from ai_router import ask_claude as _ask_claude_raw
+            async def _ask_claude_wrapper(system_prompt:str,history:list,max_tokens:int=600,task_type:str="dialogue",route:str="")->str:
+                import asyncio as _al
+                return await _al.to_thread(_ask_claude_raw,system_prompt,history,max_tokens,task_type,route)
+        except Exception as _aie:
+            log.error("[PIPELINE] ask_claude import failed: %s",_aie)
+            async def _ask_claude_wrapper(*a,**kw): return "[PIPELINE ERROR] AI runtime unavailable"
+        # SAVE SESSION INJECTION (TASK 4)
+        async def _save_session_wrapper(updated_session:dict)->None:
+            try:
+                import asyncio as _sl
+                from agents import save_session as _sv_fn
+                await _sl.to_thread(_sv_fn,_contact_id,updated_session)
+                log.debug("[PIPELINE] Session saved contact=%s route=%s",_contact_id,updated_session.get("route","?"))
+            except Exception as _sve:
+                log.warning("[PIPELINE] Session save failed contact=%s: %s",_contact_id,_sve)
+        # FAST PATH
+        fast_intent, fast_response = fast_path_resolver.resolve(text, _session)
 
         if fast_intent != FastPathIntent.NONE and fast_response:
             # Check freshness before sending fast response
@@ -621,8 +652,10 @@ class MessagePipelineManager:
             async def run_orch():
                 return await self.orchestrator.handle_message(
                     user_id=user_id,
-                    text=text,
-                    raw_update=raw_update or {}
+                    message_text=text,
+                    session=_session,
+                    ask_claude_fn=_ask_claude_wrapper,
+                    save_session_fn=_save_session_wrapper,
                 )
 
             result, timed_out = await run_with_timeout(run_orch())
@@ -655,7 +688,10 @@ class MessagePipelineManager:
         # ------------------------------------------------------------------
         try:
             orch_result = result if hasattr(result, "memory_updated") else None
-            await self._schedule_background_tasks(user_id, text, reply_text, orch_result)
+            await self._schedule_background_tasks(
+                user_id, text, reply_text, orch_result,
+                session=_session, contact_id=_contact_id
+            )
         except Exception as e:
             log.error("[PIPELINE] Background task scheduling error user=%s: %s", user_id, e)
 
@@ -672,10 +708,13 @@ class MessagePipelineManager:
     async def _schedule_background_tasks(self, user_id: int,
                                            input_text: str,
                                            reply_text: str,
-                                           orch_result: Optional[Any]):
+                                           orch_result: Optional[Any],
+                                           session: Optional[Dict] = None,
+                                           contact_id: Optional[str] = None):
         """
         Schedule all post-response background tasks.
         These run AFTER response is sent. Never block user.
+        session: real session (TASK 5). contact_id: real contact string (TASK 6).
         """
         # Task 1: Orchestration log (normal priority)
         async def log_task():
@@ -697,14 +736,19 @@ class MessagePipelineManager:
         )
 
         # Task 2: Memory write (high priority)
+        # TASK 5 FIX: memory_task — pass real session to mem_writer
+        _real_session = session or {}
+        _context_pkg = (orch_result.context_package if orch_result and hasattr(orch_result,"context_package") else {}) or {}
         if orch_result and hasattr(orch_result, "memory_updated") and orch_result.memory_updated:
             async def memory_task():
                 try:
-                    self.orchestrator.memory_writer.write(
-                        user_id=user_id,
-                        session={},
-                        orch_result=orch_result.__dict__ if hasattr(orch_result, "__dict__") else {}
+                    self.orchestrator.mem_writer.write(
+                        session=_real_session,
+                        user_message=input_text,
+                        ai_reply=reply_text,
+                        context_package=_context_pkg,
                     )
+                    log.debug("[PIPELINE_BG] Memory written user=%s route=%s",user_id,_real_session.get("route","?"))
                 except Exception as e:
                     log.debug("[PIPELINE_BG] Memory error: %s", e)
 
@@ -769,7 +813,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5: Proactive dispatcher — send approved recovery messages (background only)
+        # Task 5: Proactive dispatcher â send approved recovery messages (background only)
         async def dispatcher_task():
             try:
                 from proactive_message_dispatcher import get_dispatcher
@@ -789,7 +833,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5.5 — Adaptive Behaviour Engine (LOWEST priority — runs after policy, before dispatch)
+        # Task 5.5 â Adaptive Behaviour Engine (LOWEST priority â runs after policy, before dispatch)
         # Evaluates user behavioural profile and generates adaptation recommendations.
         # NEVER sends messages. Central Orchestrator remains final authority.
         async def behaviour_task():
@@ -833,7 +877,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5.6 — Clinical Continuity Intelligence (analytical layer, no outbound sends)
+        # Task 5.6 â Clinical Continuity Intelligence (analytical layer, no outbound sends)
         # Runs after behaviour_eval and before scanner/dispatcher final packaging.
         # This task NEVER sends messages directly.
         # Central Orchestrator remains final authority.
@@ -842,7 +886,7 @@ class MessagePipelineManager:
                 from clinical_continuity_engine import get_continuity_engine
                 engine = get_continuity_engine()
                 if not engine:
-                    log.debug("[CONTINUITY] Engine not initialised — skipping continuity_task")
+                    log.debug("[CONTINUITY] Engine not initialised â skipping continuity_task")
                     return
                 result = await engine.evaluate_continuity(
                     user_id=user_id,
@@ -864,7 +908,7 @@ class MessagePipelineManager:
         )
 
 
-                # Task 5.7 — Trajectory Intelligence (LOW priority, enriches dispatcher context)
+                # Task 5.7 â Trajectory Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER continuity_task, BEFORE dispatcher_task
         # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
         async def trajectory_task():
@@ -908,7 +952,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.8 — Rehabilitation State Machine (LOW priority, enriches dispatcher context)
+        # Task 5.8 â Rehabilitation State Machine (LOW priority, enriches dispatcher context)
         # Runs AFTER trajectory_task, BEFORE dispatcher_task
         # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
         async def state_machine_task():
@@ -955,7 +999,7 @@ class MessagePipelineManager:
         )
 
 
-# Task 5.9 — Multi-Stage Orchestration Engine (LOW priority, enriches dispatcher context)
+# Task 5.9 â Multi-Stage Orchestration Engine (LOW priority, enriches dispatcher context)
         # Runs AFTER state_machine_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override state machine, or call dispatcher
         async def orchestration_task():
@@ -1002,7 +1046,7 @@ class MessagePipelineManager:
         )
 
 
-# Task 5.10 — Dynamic Pacing Intelligence (LOW priority, enriches dispatcher context)
+# Task 5.10 â Dynamic Pacing Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER orchestration_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, force pacing, or create urgency
         async def pacing_task():
@@ -1051,7 +1095,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.11 — Expert Load Balancing Intelligence (LOW priority, enriches dispatcher context)
+        # Task 5.11 â Expert Load Balancing Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER pacing_task, BEFORE dispatcher_task
         # IMMUTABLE: must never assign medical responsibility, force handoffs, send messages,
         #            contact experts directly, bypass governance, override human decisions
@@ -1060,7 +1104,7 @@ class MessagePipelineManager:
                 from expert_load_balancing_engine import get_load_balancing_engine
                 eng = get_load_balancing_engine()
                 if eng:
-                    # Respect governance hierarchy — never override higher layers
+                    # Respect governance hierarchy â never override higher layers
                     human_esc = context.get("human_escalation_active", False)
                     silence = context.get("silence_respected", False)
                     recovery = context.get("recovery_policy_active", False)
@@ -1104,7 +1148,7 @@ class MessagePipelineManager:
             coro_factory=load_balancing_task,
         )
 
-        # Task 5.12 — Central Cognitive Orchestrator (LOW priority, synthesizes all engine outputs)
+        # Task 5.12 â Central Cognitive Orchestrator (LOW priority, synthesizes all engine outputs)
         # Runs AFTER load_balancing_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, make medical decisions,
         #            create urgency, force progression, or destabilize system coherence
@@ -1113,7 +1157,7 @@ class MessagePipelineManager:
                 from central_cognitive_orchestrator import get_cognitive_orchestrator
                 orch = get_cognitive_orchestrator()
                 if orch:
-                    # Respect governance hierarchy — never override higher layers
+                    # Respect governance hierarchy â never override higher layers
                     human_esc = context.get("human_escalation_active", False)
                     silence = context.get("silence_respected", False)
                     if human_esc or silence:
@@ -1155,7 +1199,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.13 — Longitudinal Rehabilitation Modeling
+        # Task 5.13 â Longitudinal Rehabilitation Modeling
         async def longitudinal_modeling_task():
             try:
                 from longitudinal_rehabilitation_modeling import get_longitudinal_modeling_engine
@@ -1205,7 +1249,7 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=longitudinal_modeling_task,
         )
-        # Task 5.14 — Adaptive Rehabilitation Strategy (after longitudinal, before dispatcher)
+        # Task 5.14 â Adaptive Rehabilitation Strategy (after longitudinal, before dispatcher)
         # Runs AFTER longitudinal_modeling_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, make medical recommendations,
         #             recommend treatment, or create urgency
@@ -1230,7 +1274,7 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=adaptive_strategy_task,
         )
-                                                       # Task 5.15 — Rehabilitation Route Simulation (Phase 3.16 — read-only observer)
+                                                       # Task 5.15 â Rehabilitation Route Simulation (Phase 3.16 â read-only observer)
         # IMMUTABLE: must never predict outcomes, create fear, or override governance
         async def route_simulation_task():
             try:
@@ -1253,7 +1297,7 @@ class MessagePipelineManager:
             coro_factory=route_simulation_task,
         )
 
-        # Task 5.16 — Self-Stabilizing Governance Engine (LOW priority, read-only observer)
+        # Task 5.16 â Self-Stabilizing Governance Engine (LOW priority, read-only observer)
         # Runs AFTER route_simulation_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, change route states,
         #            make medical conclusions, bypass dispatcher, or create urgency
@@ -1282,7 +1326,7 @@ class MessagePipelineManager:
 
 
 
-# Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
+# Task 6 â Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
                 from silent_user_scanner import get_scanner
