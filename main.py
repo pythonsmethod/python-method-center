@@ -1432,3 +1432,44 @@ async def shadow_readiness_endpoint():
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
+
+# ---------------------------------------------------------------------------
+# PHASE 4 STEP 8: Continuity Intelligence endpoints (read-only)
+# ---------------------------------------------------------------------------
+@app.get("/continuity/{contact_id}")
+async def continuity_snapshot_endpoint(contact_id: str):
+    """
+    Returns ContinuitySnapshot for a specific contact.
+    Read-only: computes on demand from session data.
+    Does NOT mutate session, does NOT send messages.
+    """
+    try:
+        from continuity_intelligence import analyze_continuity, snapshot_to_dict
+        session = await asyncio.to_thread(load_session, contact_id)
+        snap = analyze_continuity(
+            contact_id=contact_id,
+            session=session or {},
+        )
+        return JSONResponse(snapshot_to_dict(snap))
+    except Exception as e:
+        log.error("[CONTINUITY] Endpoint error contact=%s: %s", contact_id, e)
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/continuity/report")
+async def continuity_report_endpoint():
+    """Returns system-level continuity status and available flags."""
+    try:
+        from continuity_intelligence import ALL_FLAGS
+        return JSONResponse({
+            "status": "continuity_intelligence_active",
+            "available_flags": ALL_FLAGS,
+            "endpoints": [
+                "GET /continuity/{contact_id}",
+                "GET /continuity/report",
+            ],
+            "note": "Read-only layer. Does not mutate sessions or send messages.",
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
