@@ -39,22 +39,67 @@ sessions = {}
 # ============================================================
 # SENDPULSE
 # ============================================================
-async def get_sendpulse_token():
-    try:
-        async with httpx.AsyncClient(timeout=15) as cli:
-            r = await cli.post(
-                "https://api.sendpulse.com/oauth/access_token",
-                json={
-                    "grant_type": "client_credentials",
-                    "client_id": SENDPULSE_CLIENT_ID,
-                    "client_secret": SENDPULSE_CLIENT_SECRET,
-                },
-            )
-            r.raise_for_status()
-            return r.json().get("access_token")
-    except Exception as e:
-        log.error(f"SendPulse token error: {e}")
-        return None
+# Phase 4 Step 6: In-memory OAuth token cache.
+# Eliminates one HTTP round-trip per message (was: OAuth + send, now: send only on cache hit).
+_sp_token_lock = asyncio.Lock()
+_sp_token_cache: dict = {"token": None, "expires_at": 0.0}
+_SP_TOKEN_TTL = 3600        # SendPulse access_token lifetime (seconds)
+_SP_TOKEN_BUFFER = 60       # Refresh 60s before actual expiry (safety buffer)
+
+
+async def get_sendpulse_token() -> "str | None":
+    """
+    Return a valid SendPulse OAuth access token.
+    Uses in-memory cache with 3600s TTL and 60s safety buffer.
+    Async-safe via asyncio.Lock (prevents concurrent refresh storms).
+    Falls back to a fresh OAuth request if cache is broken.
+    Token value is NEVER logged.
+    """
+    import time as _t_sp
+    # Fast path: read cache without lock (asyncio is single-threaded)
+    _cached = _sp_token_cache.get("token")
+    _expires = _sp_token_cache.get("expires_at", 0.0)
+    if _cached and _t_sp.monotonic() < _expires - _SP_TOKEN_BUFFER:
+        log.debug("[SENDPULSE_TOKEN] cache_hit expires_in=%.0fs", _expires - _t_sp.monotonic())
+        return _cached
+
+    # Slow path: acquire lock to prevent concurrent refreshes
+    async with _sp_token_lock:
+        # Double-check inside lock (another coroutine may have refreshed while we waited)
+        _cached = _sp_token_cache.get("token")
+        _expires = _sp_token_cache.get("expires_at", 0.0)
+        if _cached and _t_sp.monotonic() < _expires - _SP_TOKEN_BUFFER:
+            log.debug("[SENDPULSE_TOKEN] cache_hit (post-lock) expires_in=%.0fs",
+                      _expires - _t_sp.monotonic())
+            return _cached
+
+        # Actual OAuth refresh
+        try:
+            async with httpx.AsyncClient(timeout=15) as cli:
+                r = await cli.post(
+                    "https://api.sendpulse.com/oauth/access_token",
+                    json={
+                        "grant_type": "client_credentials",
+                        "client_id": SENDPULSE_CLIENT_ID,
+                        "client_secret": SENDPULSE_CLIENT_SECRET,
+                    },
+                )
+                r.raise_for_status()
+                new_token = r.json().get("access_token")
+                if new_token:
+                    _sp_token_cache["token"] = new_token
+                    _sp_token_cache["expires_at"] = _t_sp.monotonic() + _SP_TOKEN_TTL
+                    log.info("[SENDPULSE_TOKEN] refreshed ttl=%ds buffer=%ds",
+                             _SP_TOKEN_TTL, _SP_TOKEN_BUFFER)
+                    return new_token
+                log.error("[SENDPULSE_TOKEN] refresh_failed: no access_token in response")
+                return None
+        except Exception as _sp_err:
+            log.error("[SENDPULSE_TOKEN] refresh_failed: %s", _sp_err)
+            # Safety: clear stale cache so next attempt retries cleanly
+            _sp_token_cache["token"] = None
+            _sp_token_cache["expires_at"] = 0.0
+            return None
 
 
 async def send_message(contact_id: str, text: str) -> bool:
