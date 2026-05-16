@@ -1211,11 +1211,178 @@ def test_t53_continuity_analyzer_pure_function():
     )
     print("T53 PASS: ContinuityAnalyzer.analyze() is a pure function — no side effects")
 
+
+
+# =============================================================================
+# Phase 4 Step 11: Persistent Shadow Analytics Tests (T54-T61)
+# =============================================================================
+
+async def test_t54_shadow_analytics_buffer_loads_after_init():
+    """T54: _shadow_analytics_init() creates a deque buffer."""
+    import main as _m
+    import collections
+    await _m._shadow_analytics_init()
+    assert _m._shadow_analytics_buf is not None, "T54 FAIL: buffer is None after init"
+    assert isinstance(_m._shadow_analytics_buf, collections.deque), "T54 FAIL: buffer is not a deque"
+    print("T54 PASS: shadow analytics buffer initialized correctly")
+
+
+async def test_t55_shadow_report_with_empty_memory_buffer():
+    """T55: generate_shadow_report() returns a valid dict even when buffer is empty."""
+    import main as _m
+    import collections
+    # Ensure buffer is initialized but empty
+    _m._shadow_analytics_buf = collections.deque(maxlen=10000)
+    report = await _m.generate_shadow_report()
+    assert isinstance(report, dict), "T55 FAIL: report is not a dict"
+    assert "report_generated_at" in report, "T55 FAIL: missing report_generated_at"
+    assert "all_time" in report, "T55 FAIL: missing all_time"
+    assert "collection_metadata" in report, "T55 FAIL: missing collection_metadata"
+    print("T55 PASS: generate_shadow_report() works with empty buffer")
+
+
+async def test_t56_shadow_report_collection_metadata_fields():
+    """T56: /shadow/report response includes all Phase 4 Step 11 metadata fields."""
+    import main as _m
+    import collections
+    import datetime
+    # Seed buffer with a test record
+    _m._shadow_analytics_buf = collections.deque(maxlen=10000)
+    _m._shadow_analytics_buf.append({
+        "ts": datetime.datetime.utcnow(),
+        "contact_id": "t56",
+        "old_route": "main", "shadow_route": "main", "route_match": True,
+        "old_intent": "x", "shadow_intent": "x", "intent_match": True,
+        "old_agent": "a", "shadow_agent": "a", "agent_match": True,
+        "escalation_match": True,
+        "old_reply_len": 10, "shadow_reply_len": 10,
+        "latency_ms": 200, "shadow_error": False,
+        "mismatch_reasons": [], "high_risk": False,
+        "continuity_enriched": False, "continuity_score": 0,
+        "continuity_changed_route": False, "continuity_changed_escalation": False,
+        "continuity_changed_next_step": False, "continuity_improved_decision": False,
+        "continuity_confidence": 0.0,
+    })
+    report = await _m.generate_shadow_report()
+    meta = report.get("collection_metadata", {})
+    required_fields = [
+        "oldest_record_timestamp",
+        "newest_record_timestamp",
+        "effective_collection_window_hours",
+        "records_in_memory",
+        "records_loaded_from_db",
+        "data_source",
+    ]
+    for f in required_fields:
+        assert f in meta, f"T56 FAIL: missing collection_metadata field '{f}'"
+    assert meta["records_in_memory"] == 1, f"T56 FAIL: records_in_memory={meta['records_in_memory']}, expected 1"
+    assert meta["data_source"] == "memory", f"T56 FAIL: data_source={meta['data_source']}, expected 'memory'"
+    assert meta["oldest_record_timestamp"] is not None, "T56 FAIL: oldest_record_timestamp is None"
+    print("T56 PASS: collection_metadata contains all required fields")
+
+
+async def test_t57_persisted_metrics_restore_from_records():
+    """T57: _compute_shadow_aggregates correctly processes backfilled records."""
+    import main as _m
+    import datetime
+    records = []
+    for i in range(5):
+        records.append({
+            "ts": datetime.datetime.utcnow(),
+            "contact_id": f"t57_{i}",
+            "old_route": "main", "shadow_route": "main", "route_match": True,
+            "old_intent": "onboarding", "shadow_intent": "onboarding", "intent_match": True,
+            "old_agent": "ai", "shadow_agent": "ai", "agent_match": True,
+            "escalation_match": True,
+            "old_reply_len": 100, "shadow_reply_len": 100,
+            "latency_ms": 500, "shadow_error": False,
+            "mismatch_reasons": [], "high_risk": False,
+            "continuity_enriched": True, "continuity_score": 80,
+            "continuity_changed_route": False, "continuity_changed_escalation": False,
+            "continuity_changed_next_step": False, "continuity_improved_decision": False,
+            "continuity_confidence": 0.8,
+        })
+    agg = _m._compute_shadow_aggregates(records)
+    assert agg["total_observations"] == 5, f"T57 FAIL: total={agg['total_observations']}, expected 5"
+    assert agg["route_match_rate_pct"] == 100.0, f"T57 FAIL: route_match_rate={agg['route_match_rate_pct']}"
+    assert agg["continuity_enriched_count"] == 5, f"T57 FAIL: continuity_enriched_count={agg.get('continuity_enriched_count')}"
+    print("T57 PASS: _compute_shadow_aggregates correctly processes backfilled records")
+
+
+async def test_t58_traffic_heartbeat_globals_initialized():
+    """T58: _last_webhook_ts and _traffic_was_silent globals exist in main module."""
+    import main as _m
+    assert hasattr(_m, '_last_webhook_ts'), "T58 FAIL: _last_webhook_ts not found in main"
+    assert hasattr(_m, '_traffic_was_silent'), "T58 FAIL: _traffic_was_silent not found in main"
+    assert _m._traffic_was_silent == False or _m._traffic_was_silent == True, "T58 FAIL: invalid _traffic_was_silent type"
+    print("T58 PASS: traffic heartbeat globals exist in main module")
+
+
+async def test_t59_traffic_heartbeat_coroutine_exists():
+    """T59: _traffic_heartbeat is an async coroutine function."""
+    import main as _m
+    import asyncio
+    assert hasattr(_m, '_traffic_heartbeat'), "T59 FAIL: _traffic_heartbeat not in main"
+    assert asyncio.iscoroutinefunction(_m._traffic_heartbeat), "T59 FAIL: _traffic_heartbeat is not async"
+    print("T59 PASS: _traffic_heartbeat is an async coroutine function")
+
+
+async def test_t60_shadow_report_data_source_field():
+    """T60: generate_shadow_report returns data_source='memory' when buffer has data."""
+    import main as _m
+    import collections
+    import datetime
+    _m._shadow_analytics_buf = collections.deque(maxlen=10000)
+    _m._shadow_analytics_buf.append({
+        "ts": datetime.datetime.utcnow(),
+        "contact_id": "t60", "old_route": "main", "shadow_route": "main",
+        "route_match": True, "old_intent": "x", "shadow_intent": "x",
+        "intent_match": True, "old_agent": "a", "shadow_agent": "a",
+        "agent_match": True, "escalation_match": True,
+        "old_reply_len": 5, "shadow_reply_len": 5, "latency_ms": 100,
+        "shadow_error": False, "mismatch_reasons": [], "high_risk": False,
+        "continuity_enriched": False, "continuity_score": 0,
+        "continuity_changed_route": False, "continuity_changed_escalation": False,
+        "continuity_changed_next_step": False, "continuity_improved_decision": False,
+        "continuity_confidence": 0.0,
+    })
+    report = await _m.generate_shadow_report()
+    meta = report.get("collection_metadata", {})
+    assert meta.get("data_source") == "memory", f"T60 FAIL: data_source={meta.get('data_source')}, expected 'memory'"
+    assert meta.get("records_loaded_from_db") == 0, f"T60 FAIL: records_loaded_from_db={meta.get('records_loaded_from_db')}"
+    print("T60 PASS: data_source='memory' when buffer has data")
+
+
+async def test_t61_shadow_db_log_in_save_metric():
+    """T61: _save_shadow_metric appends to in-memory buffer correctly (unit test without DB)."""
+    import main as _m
+    import collections
+    import datetime
+    _m._shadow_analytics_buf = collections.deque(maxlen=10000)
+    record = {
+        "ts": datetime.datetime.utcnow(),
+        "contact_id": "t61_contact",
+        "old_route": "main", "shadow_route": "main", "route_match": True,
+        "old_intent": "x", "shadow_intent": "x", "intent_match": True,
+        "old_agent": "ai", "shadow_agent": "ai", "agent_match": True,
+        "escalation_match": True, "old_reply_len": 10, "shadow_reply_len": 10,
+        "latency_ms": 300, "shadow_error": False, "mismatch_reasons": [], "high_risk": False,
+        "continuity_enriched": False, "continuity_score": 0,
+        "continuity_changed_route": False, "continuity_changed_escalation": False,
+        "continuity_changed_next_step": False, "continuity_improved_decision": False,
+        "continuity_confidence": 0.0,
+    }
+    # Save metric — DB will fail (no real DB in test), but in-memory should succeed
+    await _m._save_shadow_metric(record)
+    assert len(_m._shadow_analytics_buf) == 1, f"T61 FAIL: buffer has {len(_m._shadow_analytics_buf)} records, expected 1"
+    assert _m._shadow_analytics_buf[0]["contact_id"] == "t61_contact", "T61 FAIL: wrong record stored"
+    print("T61 PASS: _save_shadow_metric appends to in-memory buffer correctly")
+
 if __name__ == "__main__":
     import asyncio as _asyncio
 
     async def run_all_phase4():
-        print("=== Phase 4 Step 2+4+6+7+8+9 Integration Tests (T1-T53) ===")
+        print("=== Phase 4 Step 2+4+6+7+8+9+11 Integration Tests (T1-T61) ===")
         await test_t1_t2_orchestrator_receives_real_session_and_message_text()
         await test_t3_ask_claude_fn_is_called()
         await test_t4_save_session_fn_is_called()
@@ -1270,6 +1437,15 @@ if __name__ == "__main__":
         await test_t51_shadow_compare_logs_continuity_metrics()
         await test_t52_no_crash_if_continuity_analyzer_fails()
         test_t53_continuity_analyzer_pure_function()
-        print("\n=== ALL TESTS PASSED (T1-T53) ===")
+        # Phase 4 Step 11: Persistent Shadow Analytics tests
+        await test_t54_shadow_analytics_buffer_loads_after_init()
+        await test_t55_shadow_report_with_empty_memory_buffer()
+        await test_t56_shadow_report_collection_metadata_fields()
+        await test_t57_persisted_metrics_restore_from_records()
+        await test_t58_traffic_heartbeat_globals_initialized()
+        await test_t59_traffic_heartbeat_coroutine_exists()
+        await test_t60_shadow_report_data_source_field()
+        await test_t61_shadow_db_log_in_save_metric()
+        print("\n=== ALL TESTS PASSED (T1-T61) ===")
 
     _asyncio.run(run_all_phase4())
