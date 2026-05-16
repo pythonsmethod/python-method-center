@@ -965,6 +965,14 @@ def _compute_shadow_aggregates(records):
         "most_unstable_routes": unstable_routes,
         "most_unstable_intents": unstable_intents,
         "orchestrator_readiness_score": readiness,
+        # Phase 4 Step 9: Continuity enrichment statistics
+        "continuity_enriched_count": sum(1 for r in records if r.get("continuity_enriched")),
+        "continuity_avg_score": round(sum(r.get("continuity_score", 0) for r in records) / total, 1) if total else 0,
+        "continuity_route_changes": sum(1 for r in records if r.get("continuity_changed_route")),
+        "continuity_escalation_changes": sum(1 for r in records if r.get("continuity_changed_escalation")),
+        "continuity_step_changes": sum(1 for r in records if r.get("continuity_changed_next_step")),
+        "continuity_improved_decisions": sum(1 for r in records if r.get("continuity_improved_decision")),
+        "continuity_avg_confidence": round(sum(r.get("continuity_confidence", 0.0) for r in records) / total, 3) if total else 0.0,
     }
 
 
@@ -1028,6 +1036,14 @@ async def _shadow_observe(
         "shadow_error": False,
         "mismatch_reasons": [],
         "high_risk": False,
+        # Phase 4 Step 9: Continuity enrichment metrics
+        "continuity_enriched": False,
+        "continuity_score": 0,
+        "continuity_changed_route": False,
+        "continuity_changed_escalation": False,
+        "continuity_changed_next_step": False,
+        "continuity_improved_decision": False,
+        "continuity_confidence": 0.0,
     }
     try:
         # 1. Load real session
@@ -1060,7 +1076,27 @@ async def _shadow_observe(
         # 6. Get pipeline singleton
         pipeline = await asyncio.to_thread(_get_pipeline)
 
-        # 7. Build OrchestratorCore and call with shadow_mode=True
+        # 6b. Phase 4 Step 9: Load ContinuitySnapshot (read-only, shadow enrichment)
+        _continuity_snap = None
+        try:
+            from continuity_intelligence import ContinuityAnalyzer as _CIAnalyzer
+            _ci_analyzer = _CIAnalyzer(contact_id=contact_id)
+            _continuity_snap = _ci_analyzer.analyze(session=shadow_session)
+            record["continuity_enriched"] = True
+            record["continuity_score"] = getattr(_continuity_snap, "continuity_health_score", 0)
+            record["continuity_confidence"] = float(getattr(_continuity_snap, "confidence", 0.0))
+            log.info(
+                "[SHADOW_CONTINUITY] Loaded ContinuitySnapshot contact=%s health=%s dropout=%s next_step=%s",
+                contact_id,
+                getattr(_continuity_snap, "continuity_health_score", "?"),
+                getattr(_continuity_snap, "dropout_risk", "?"),
+                str(getattr(_continuity_snap, "next_best_step", "?"))[:60],
+            )
+        except Exception as _cie:
+            log.debug("[SHADOW_CONTINUITY] Snapshot load failed (non-fatal): %s", _cie)
+            _continuity_snap = None
+
+        # 7. Build OrchestratorCore and call — BASELINE (without continuity)
         from orchestrator_core import OrchestratorCore
         orchestrator = OrchestratorCore(
             user_id=contact_hash,
@@ -1073,6 +1109,59 @@ async def _shadow_observe(
             message=text,
             shadow_mode=True,
         )
+
+        # 7b. Phase 4 Step 9: Run enriched shadow (WITH continuity) and compare
+        if _continuity_snap is not None:
+            try:
+                import copy as _copy_mod
+                _enriched_session = _copy_mod.deepcopy(shadow_session)
+                _orch_enriched = OrchestratorCore(
+                    user_id=contact_hash,
+                    session=_enriched_session,
+                    ask_claude_fn=_ask_claude_shadow,
+                    save_session_fn=_noop_save_session,
+                    pipeline=pipeline,
+                )
+                _enr_result = await _orch_enriched.handle_message(
+                    message=text,
+                    shadow_mode=True,
+                    continuity_snapshot=_continuity_snap,
+                )
+                # Compare baseline vs enriched
+                _base_route = str(getattr(orch_result, "route", "unknown"))
+                _enr_route  = str(getattr(_enr_result, "route", "unknown"))
+                _base_esc   = bool(getattr(orch_result, "escalated", False))
+                _enr_esc    = bool(getattr(_enr_result, "escalated", False))
+                _base_step  = str(getattr(orch_result, "active_agent", "unknown"))
+                _enr_step   = str(getattr(_enr_result, "active_agent", "unknown"))
+
+                record["continuity_changed_route"]      = (_base_route != _enr_route)
+                record["continuity_changed_escalation"] = (_base_esc   != _enr_esc)
+                record["continuity_changed_next_step"]  = (_base_step  != _enr_step)
+
+                # Improved decision: any change in a high-value scenario
+                _snap_flags = getattr(_continuity_snap, "flags", []) or []
+                _is_high_value = any(f in _snap_flags for f in [
+                    "RETURNED_AFTER_PAUSE", "PAYMENT_WITHOUT_ONBOARDING",
+                    "STUCK_USER", "ONBOARDING_INCOMPLETE", "ESCALATION_NOT_ACKED",
+                    "HIGH_DROPOUT_RISK", "ROUTE_DRIFT",
+                ])
+                _any_change = record["continuity_changed_route"] or record["continuity_changed_escalation"] or record["continuity_changed_next_step"]
+                record["continuity_improved_decision"] = (_is_high_value and _any_change)
+
+                log.info(
+                    "[SHADOW_CONTINUITY_COMPARE] contact=%s "
+                    "route_changed=%s base_route=%s enr_route=%s "
+                    "esc_changed=%s step_changed=%s improved=%s high_value=%s",
+                    contact_id,
+                    record["continuity_changed_route"], _base_route, _enr_route,
+                    record["continuity_changed_escalation"],
+                    record["continuity_changed_next_step"],
+                    record["continuity_improved_decision"],
+                    _is_high_value,
+                )
+            except Exception as _enr_e:
+                log.debug("[SHADOW_CONTINUITY_COMPARE] Enriched run failed (non-fatal): %s", _enr_e)
 
         # 8. Extract shadow results
         if hasattr(orch_result, "reply"):
