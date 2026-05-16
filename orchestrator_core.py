@@ -179,6 +179,7 @@ class OrchestratorCore:
         ask_claude_fn=None,
         save_session_fn=None,
         shadow_mode: bool = False,
+        continuity_snapshot=None,
     ) -> OrchestrationResult:
         """
         Full orchestration pipeline for a single user message.
@@ -222,6 +223,44 @@ class OrchestratorCore:
             context_package = self.ctx_builder.build(session, message_text)
             _orch_event["steps"].append("S0:context_package")
             log.debug("[ORCH S0] context_package built for user %s", user_id)
+
+            # ---------------------------------------------------------------
+            # STEP 0b: Continuity Context Enrichment (Phase 4 Step 9)
+            # Read-only: reads continuity_snapshot if provided (shadow mode).
+            # Never mutates session, never sends messages, never writes DB.
+            # Enriches context_package with trajectory signals for routing.
+            # ---------------------------------------------------------------
+            _continuity_ctx = {}
+            if continuity_snapshot is not None:
+                try:
+                    _continuity_ctx = {
+                        "health_score":       getattr(continuity_snapshot, "continuity_health_score", 0),
+                        "next_best_step":     getattr(continuity_snapshot, "next_best_step", None),
+                        "dropout_risk":       getattr(continuity_snapshot, "dropout_risk", "low"),
+                        "return_after_pause": getattr(continuity_snapshot, "return_context", {}).get("return_after_pause", False) if isinstance(getattr(continuity_snapshot, "return_context", None), dict) else False,
+                        "route_stability":    getattr(continuity_snapshot, "route", None),
+                        "unresolved_threads": getattr(continuity_snapshot, "unresolved_threads", []),
+                        "escalation_pending": bool((getattr(continuity_snapshot, "risk_flags", None) or {}).get("escalation_pending", False)),
+                        "risk_flags":         getattr(continuity_snapshot, "risk_flags", {}),
+                        "confidence":         getattr(continuity_snapshot, "confidence", 0.0),
+                    }
+                    # Enrich context_package with continuity (read-only)
+                    context_package["continuity"] = _continuity_ctx
+                    log.info(
+                        "[ORCH_CONTINUITY] user=%s health=%s dropout=%s return_pause=%s "
+                        "next_step=%s escalation_pending=%s confidence=%.2f",
+                        user_id,
+                        _continuity_ctx.get("health_score", 0),
+                        _continuity_ctx.get("dropout_risk", "low"),
+                        _continuity_ctx.get("return_after_pause", False),
+                        str(_continuity_ctx.get("next_best_step", "?"))[:80],
+                        _continuity_ctx.get("escalation_pending", False),
+                        float(_continuity_ctx.get("confidence", 0.0)),
+                    )
+                    _orch_event["steps"].append("S0b:continuity_enriched")
+                except Exception as _ce:
+                    log.warning("[ORCH_CONTINUITY] Failed to read continuity_snapshot: %s", _ce)
+                    _orch_event["steps"].append("S0b:continuity_error")
 
             # ---------------------------------------------------------------
             # STEP 1: State analysis (intent + state + risk)
