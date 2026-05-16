@@ -5,7 +5,7 @@ import asyncio
 import os
 import logging
 import stripe
-from fastapi import FastAPI, Requesth
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
