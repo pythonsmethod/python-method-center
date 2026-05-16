@@ -288,7 +288,11 @@ async def test_t8_contact_id_extracted_from_raw_update():
     pipeline = MessagePipelineManager(bot=None)
 
     # Patch the internal dependencies
-    with patch("agents.load_session", side_effect=lambda cid: _make_session()) as mock_ls,          patch("agents.save_session") as mock_ss,          patch("ai_router.ask_claude", return_value="Mock reply") as mock_ac,          patch.object(pipeline, "_send_response", new_callable=AsyncMock) as mock_send,          patch.object(pipeline, "_schedule_background_tasks", new_callable=AsyncMock) as mock_bg:
+    with patch("agents.load_session", side_effect=lambda cid: _make_session()) as mock_ls, \
+         patch("agents.save_session") as mock_ss, \
+         patch("ai_router.ask_claude", return_value="Mock reply") as mock_ac, \
+         patch.object(pipeline, "_send_response", new_callable=AsyncMock) as mock_send, \
+         patch.object(pipeline, "_schedule_background_tasks", new_callable=AsyncMock) as mock_bg:
 
         # Simulate a batch with raw_update containing real contact_id
         from debounce_manager import MessageBatch, BatchedMessage
@@ -371,6 +375,46 @@ def test_structural_patches_present_in_orchestrator_core():
     print("[STRUCTURAL] ALL PATCHES CONFIRMED IN SOURCE")
 
 
+
+
+# ---------------------------------------------------------------------------
+# T9: No UTF-8 encoding corruption in orchestrator_core.py
+# ---------------------------------------------------------------------------
+
+def test_t9_no_encoding_corruption():
+    """
+    T9: orchestrator_core.py must not contain mojibake (double-encoded UTF-8).
+    The file must have proper em-dashes (U+2014, —) not corrupted sequences.
+    Verifies that the encoding fix from Phase 4 Step 2 (encoding patch) is applied.
+    """
+    import inspect
+    import orchestrator_core
+
+    source = inspect.getsource(orchestrator_core)
+
+    # Should have em-dashes as proper unicode
+    em_dash_count = source.count("\u2014")  # — in string
+    em_dash_unicode = source.count("\u2014")
+
+    # Should NOT have corrupted em-dash patterns
+    corrupted_em_dash = "\u00e2\u0080\u0094"  # â€" (mojibake)
+    has_corruption = corrupted_em_dash in source or "â€" in source
+
+    assert not has_corruption, (
+        "orchestrator_core.py contains mojibake (corrupted em-dashes). "
+        "Run the encoding fix commit."
+    )
+
+    # Russian error messages should be readable (non-ASCII, not mojibake)
+    # Check that the error messages contain proper Unicode
+    has_cyrillic = any(ord(c) > 0x400 and ord(c) < 0x500 for c in source)
+    assert has_cyrillic, (
+        "orchestrator_core.py should contain Cyrillic characters in error messages. "
+        "Encoding may still be corrupted."
+    )
+
+    print(f"[T9] PASS: No encoding corruption found, Cyrillic chars present")
+
 if __name__ == "__main__":
     # Quick smoke test runner
     import asyncio
@@ -385,6 +429,7 @@ if __name__ == "__main__":
         test_t7_old_webhook_process_message_importable()
         await test_t8_contact_id_extracted_from_raw_update()
         test_structural_patches_present_in_orchestrator_core()
-        print("\n=== ALL TESTS PASSED ===")
+        test_t9_no_encoding_corruption()
+        print("\n=== ALL TESTS PASSED (T1-T9) ===")
 
     asyncio.run(run_all())
