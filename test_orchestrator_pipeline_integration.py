@@ -643,11 +643,159 @@ async def test_t26_send_document_calls_token_fn():
     print("T26 PASS: send_document calls get_sendpulse_token")
 
 
+
+# ===========================================================================
+# PHASE 4 STEP 7: Shadow Analytics Tests (T27-T34)
+# ===========================================================================
+
+async def test_t27_shadow_analytics_init():
+    """T27: _shadow_analytics_init creates in-memory buffer and lock."""
+    import main as _m
+    import collections
+    # Re-init to test
+    _m._shadow_analytics_buf = None
+    _m._shadow_analytics_lock = None
+    await _m._shadow_analytics_init()
+    assert _m._shadow_analytics_buf is not None, \
+        "T27 FAIL: _shadow_analytics_buf not initialized"
+    assert isinstance(_m._shadow_analytics_buf, collections.deque), \
+        "T27 FAIL: _shadow_analytics_buf should be deque"
+    assert _m._shadow_analytics_lock is not None, \
+        "T27 FAIL: _shadow_analytics_lock not initialized"
+    print("T27 PASS: _shadow_analytics_init creates buffer and lock")
+
+
+async def test_t28_save_shadow_metric_appends_to_buffer():
+    """T28: _save_shadow_metric appends record to in-memory buffer."""
+    import main as _m
+    import collections
+    _m._shadow_analytics_buf = collections.deque(maxlen=1000)
+    _m._shadow_analytics_lock = None
+    record = {
+        "contact_id": "test_t28",
+        "old_route": "main", "shadow_route": "main", "route_match": True,
+        "old_intent": "greeting", "shadow_intent": "greeting", "intent_match": True,
+        "old_agent": "main_agent", "shadow_agent": "main_agent", "agent_match": True,
+        "escalation_match": True,
+        "old_reply_len": 50, "shadow_reply_len": 55,
+        "latency_ms": 300,
+        "shadow_error": False, "mismatch_reasons": [], "high_risk": False,
+    }
+    await _m._save_shadow_metric(record)
+    assert len(_m._shadow_analytics_buf) == 1, \
+        f"T28 FAIL: expected 1 record, got {len(_m._shadow_analytics_buf)}"
+    saved = _m._shadow_analytics_buf[0]
+    assert saved["contact_id"] == "test_t28", "T28 FAIL: contact_id mismatch"
+    print("T28 PASS: _save_shadow_metric appends to in-memory buffer")
+
+
+def test_t29_classify_mismatch_route_mismatch():
+    """T29: _classify_mismatch returns route_mismatch when routes differ."""
+    import main as _m
+    reasons = _m._classify_mismatch(
+        route_match=False, intent_match=True, agent_match=True, escalation_match=True,
+        old_route="main", shadow_route="onboarding",
+        old_intent="info", shadow_intent="info",
+        old_reply_len=100, shadow_reply_len=110,
+        shadow_error=False, latency_ms=200,
+    )
+    assert "route_mismatch" in reasons, f"T29 FAIL: expected route_mismatch in {reasons}"
+    assert "intent_mismatch" not in reasons, f"T29 FAIL: unexpected intent_mismatch in {reasons}"
+    print("T29 PASS: _classify_mismatch correctly identifies route_mismatch")
+
+
+def test_t30_classify_mismatch_shadow_error():
+    """T30: _classify_mismatch returns only shadow_error when shadow_error=True."""
+    import main as _m
+    reasons = _m._classify_mismatch(
+        route_match=False, intent_match=False, agent_match=False, escalation_match=False,
+        old_route="main", shadow_route="error",
+        old_intent="unknown", shadow_intent="unknown",
+        old_reply_len=0, shadow_reply_len=0,
+        shadow_error=True, latency_ms=100,
+    )
+    assert reasons == ["shadow_error"], \
+        f"T30 FAIL: expected only shadow_error, got {reasons}"
+    print("T30 PASS: _classify_mismatch returns only shadow_error on error")
+
+
+def test_t31_is_high_risk_event_escalation_disagreement():
+    """T31: _is_high_risk_event returns True when escalation_match=False."""
+    import main as _m
+    result = _m._is_high_risk_event(
+        old_route="main", shadow_route="main",
+        old_intent="greeting", shadow_intent="greeting",
+        escalation_match=False,
+    )
+    assert result is True, "T31 FAIL: escalation disagreement should be high-risk"
+    print("T31 PASS: _is_high_risk_event detects escalation disagreement")
+
+
+def test_t32_is_high_risk_event_crisis_route():
+    """T32: _is_high_risk_event returns True when crisis route involved."""
+    import main as _m
+    result = _m._is_high_risk_event(
+        old_route="crisis", shadow_route="main",
+        old_intent="help", shadow_intent="help",
+        escalation_match=True,
+    )
+    assert result is True, "T32 FAIL: crisis route should be high-risk"
+    print("T32 PASS: _is_high_risk_event detects crisis route")
+
+
+async def test_t33_compute_aggregates_match_rates():
+    """T33: _compute_shadow_aggregates calculates correct match rates."""
+    import main as _m
+    records = [
+        {"shadow_error": False, "route_match": True,  "intent_match": True,  "agent_match": True,  "escalation_match": True,  "latency_ms": 200, "mismatch_reasons": [], "high_risk": False, "old_route": "main", "old_intent": "info"},
+        {"shadow_error": False, "route_match": False, "intent_match": True,  "agent_match": True,  "escalation_match": True,  "latency_ms": 300, "mismatch_reasons": ["route_mismatch"], "high_risk": False, "old_route": "onboarding", "old_intent": "info"},
+        {"shadow_error": False, "route_match": True,  "intent_match": False, "agent_match": True,  "escalation_match": True,  "latency_ms": 400, "mismatch_reasons": ["intent_mismatch"], "high_risk": False, "old_route": "main", "old_intent": "question"},
+        {"shadow_error": True,  "route_match": False, "intent_match": False, "agent_match": False, "escalation_match": False, "latency_ms": 50,  "mismatch_reasons": ["shadow_error"], "high_risk": False, "old_route": "main", "old_intent": "unknown"},
+    ]
+    agg = _m._compute_shadow_aggregates(records)
+    assert agg["total_observations"] == 4, f"T33 FAIL: total should be 4, got {agg['total_observations']}"
+    assert agg["valid_observations"] == 3, f"T33 FAIL: valid should be 3, got {agg['valid_observations']}"
+    assert agg["shadow_errors"] == 1, f"T33 FAIL: errors should be 1"
+    assert agg["route_match_rate_pct"] == round(2/3 * 100, 1), \
+        f"T33 FAIL: route_match_rate should be {round(2/3*100,1)}, got {agg['route_match_rate_pct']}"
+    assert "orchestrator_readiness_score" in agg, "T33 FAIL: missing readiness score"
+    assert 0 <= agg["orchestrator_readiness_score"] <= 100, "T33 FAIL: readiness not in 0-100"
+    print(f"T33 PASS: _compute_shadow_aggregates readiness={agg['orchestrator_readiness_score']}")
+
+
+async def test_t34_generate_shadow_report_structure():
+    """T34: generate_shadow_report returns correct structure with all required keys."""
+    import main as _m
+    import collections
+    import datetime
+    _m._shadow_analytics_buf = collections.deque(maxlen=1000)
+    _m._shadow_analytics_lock = None
+    # Add a sample record
+    rec = {
+        "ts": datetime.datetime.utcnow(),
+        "contact_id": "t34_test",
+        "old_route": "main", "shadow_route": "main", "route_match": True,
+        "old_intent": "greeting", "shadow_intent": "greeting", "intent_match": True,
+        "old_agent": "agent_x", "shadow_agent": "agent_x", "agent_match": True,
+        "escalation_match": True,
+        "old_reply_len": 80, "shadow_reply_len": 80, "latency_ms": 250,
+        "shadow_error": False, "mismatch_reasons": [], "high_risk": False,
+    }
+    await _m._save_shadow_metric(rec)
+    report = await _m.generate_shadow_report()
+    required_keys = ["report_generated_at", "all_time", "last_24h", "orchestrator_readiness_score", "recommendation"]
+    for key in required_keys:
+        assert key in report, f"T34 FAIL: missing key '{key}' in report"
+    assert isinstance(report["orchestrator_readiness_score"], int), "T34 FAIL: readiness score must be int"
+    assert report["recommendation"], "T34 FAIL: recommendation must be non-empty"
+    print(f"T34 PASS: generate_shadow_report structure correct, score={report['orchestrator_readiness_score']}, rec='{report['recommendation'][:40]}...'")
+
+
 if __name__ == "__main__":
     import asyncio as _asyncio
 
     async def run_all_phase4():
-        print("=== Phase 4 Step 2+4+6 Integration Tests (T1-T26) ===")
+        print("=== Phase 4 Step 2+4+6+7 Integration Tests (T1-T34) ===")
         await test_t1_t2_orchestrator_receives_real_session_and_message_text()
         await test_t3_ask_claude_fn_is_called()
         await test_t4_save_session_fn_is_called()
@@ -675,6 +823,15 @@ if __name__ == "__main__":
         await test_t24_token_not_in_logs()
         await test_t25_send_message_calls_token_fn()
         await test_t26_send_document_calls_token_fn()
-        print("\n=== ALL TESTS PASSED (T1-T26) ===")
+        # Phase 4 Step 7 shadow analytics tests
+        await test_t27_shadow_analytics_init()
+        await test_t28_save_shadow_metric_appends_to_buffer()
+        test_t29_classify_mismatch_route_mismatch()
+        test_t30_classify_mismatch_shadow_error()
+        test_t31_is_high_risk_event_escalation_disagreement()
+        test_t32_is_high_risk_event_crisis_route()
+        await test_t33_compute_aggregates_match_rates()
+        await test_t34_generate_shadow_report_structure()
+        print("\n=== ALL TESTS PASSED (T1-T34) ===")
 
     _asyncio.run(run_all_phase4())
