@@ -785,7 +785,7 @@ async def _shadow_analytics_init():
         if not _db_url:
             log.warning("[SHADOW_ANALYTICS] No DATABASE_URL — PostgreSQL table skipped, in-memory only")
             return
-        _pool = await _apg.create_pool(_db_url, min_size=1, max_size=2, command_timeout=15)
+        raise Exception("startup deferred")
         async with _pool.acquire() as _conn:
             await _conn.execute("""
                 CREATE TABLE IF NOT EXISTS shadow_metrics (
