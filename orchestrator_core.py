@@ -178,6 +178,7 @@ class OrchestratorCore:
         *,
         ask_claude_fn=None,
         save_session_fn=None,
+        shadow_mode: bool = False,
     ) -> OrchestrationResult:
         """
         Full orchestration pipeline for a single user message.
@@ -369,14 +370,17 @@ class OrchestratorCore:
                 reply = post_valid.get("safe_reply", reply)
 
             # ---------------------------------------------------------------
-            # STEP 13: Memory update
+            # STEP 13: Memory update (SKIPPED in shadow_mode)
             # ---------------------------------------------------------------
-            try:
-                memory_updated = self.mem_writer.write(
-                    session, message_text, reply, context_package
-                )
-            except Exception as _me:
-                log.error("[ORCH S13] memory write error: %s", _me)
+            if not shadow_mode:
+                try:
+                    memory_updated = self.mem_writer.write(
+                        session, message_text, reply, context_package
+                    )
+                except Exception as _me:
+                    log.error("[ORCH S13] memory write error: %s", _me)
+            else:
+                log.debug("[ORCH S13] SHADOW MODE: memory write skipped")
 
             # ---------------------------------------------------------------
             # STEP 14: Overlay session tracking
@@ -410,13 +414,15 @@ class OrchestratorCore:
                 log.error("[ORCH S15] logging error: %s", _le)
 
             # ---------------------------------------------------------------
-            # STEP 16: Persist session
+            # STEP 16: Persist session (SKIPPED in shadow_mode — uses _noop_save_session)
             # ---------------------------------------------------------------
-            if save_session_fn:
+            if save_session_fn and not shadow_mode:
                 try:
                     await save_session_fn(session)
                 except Exception as _se:
                     log.error("[ORCH S16] save_session error: %s", _se)
+            elif shadow_mode:
+                log.debug("[ORCH S16] SHADOW MODE: production session save skipped")
 
         except Exception as _ex:
             log.error("[ORCH FATAL] Unhandled error in handle_message: %s", traceback.format_exc())
