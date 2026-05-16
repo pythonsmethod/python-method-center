@@ -817,43 +817,67 @@ async def _shadow_analytics_init():
             )
         await _pool.close()
         log.info("[SHADOW_ANALYTICS] PostgreSQL shadow_metrics table ready")
-        # --- Phase 4 Step 11: Startup backfill — load last 10,000 rows into buffer ---
-        try:
-            _rows = await _conn.fetch(
-                """SELECT ts, contact_id,
-                       old_route, shadow_route, route_match,
-                       old_intent, shadow_intent, intent_match,
-                       old_agent, shadow_agent, agent_match,
-                       escalation_match, old_reply_len, shadow_reply_len,
-                       latency_ms, shadow_error, mismatch_reason, high_risk
-                   FROM shadow_metrics
-                   ORDER BY ts DESC LIMIT 10000"""
-            )
-            _backfill = []
-            for _row in reversed(_rows):  # oldest first
-                _rec = dict(_row)
-                _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
-                _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
-                # Continuity fields default (not stored in DB yet)
-                _rec.setdefault("continuity_enriched", False)
-                _rec.setdefault("continuity_score", 0)
-                _rec.setdefault("continuity_changed_route", False)
-                _rec.setdefault("continuity_changed_escalation", False)
-                _rec.setdefault("continuity_changed_next_step", False)
-                _rec.setdefault("continuity_improved_decision", False)
-                _rec.setdefault("continuity_confidence", 0.0)
-                _backfill.append(_rec)
-            if _backfill:
-                async with _get_shadow_analytics_lock():
-                    for _br in _backfill:
-                        _shadow_analytics_buf.append(_br)
-                log.info("[SHADOW_ANALYTICS] Startup backfill: loaded %d records from PostgreSQL", len(_backfill))
-            else:
-                log.info("[SHADOW_ANALYTICS] Startup backfill: no records in PostgreSQL yet")
-        except Exception as _bf_e:
-            log.warning("[SHADOW_ANALYTICS] Startup backfill failed (non-critical): %s", _bf_e)
+        # --- Phase 4 Step 11: Schedule startup backfill as background task (non-blocking) ---
+        asyncio.create_task(_shadow_backfill_from_db())
+        log.info("[SHADOW_ANALYTICS] Startup backfill scheduled as background task")
     except Exception as _e:
         log.warning("[SHADOW_ANALYTICS] PostgreSQL setup failed (%s) — in-memory only", _e)
+
+async def _shadow_backfill_from_db():
+    """
+    Phase 4 Step 11: Load last 10,000 shadow records from PostgreSQL into in-memory buffer.
+    Runs as a background task after startup — never blocks app startup.
+    """
+    global _shadow_analytics_buf
+    try:
+        import asyncpg as _apg
+        _db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not _db_url:
+            log.info("[SHADOW_ANALYTICS] Backfill skipped: no DATABASE_URL")
+            return
+        _pool = await asyncio.wait_for(
+            _apg.create_pool(_db_url, min_size=1, max_size=1, command_timeout=15),
+            timeout=20.0
+        )
+        async with _pool.acquire() as _conn:
+            _rows = await asyncio.wait_for(
+                _conn.fetch(
+                    """SELECT ts, contact_id,
+                           old_route, shadow_route, route_match,
+                           old_intent, shadow_intent, intent_match,
+                           old_agent, shadow_agent, agent_match,
+                           escalation_match, old_reply_len, shadow_reply_len,
+                           latency_ms, shadow_error, mismatch_reason, high_risk
+                       FROM shadow_metrics ORDER BY ts DESC LIMIT 10000"""
+                ),
+                timeout=15.0
+            )
+        await _pool.close()
+        _backfill = []
+        for _row in reversed(_rows):
+            _rec = dict(_row)
+            _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
+            _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
+            _rec.setdefault("continuity_enriched", False)
+            _rec.setdefault("continuity_score", 0)
+            _rec.setdefault("continuity_changed_route", False)
+            _rec.setdefault("continuity_changed_escalation", False)
+            _rec.setdefault("continuity_changed_next_step", False)
+            _rec.setdefault("continuity_improved_decision", False)
+            _rec.setdefault("continuity_confidence", 0.0)
+            _backfill.append(_rec)
+        if _backfill and _shadow_analytics_buf is not None:
+            async with _get_shadow_analytics_lock():
+                for _br in _backfill:
+                    _shadow_analytics_buf.append(_br)
+            log.info("[SHADOW_ANALYTICS] Startup backfill complete: loaded %d records from PostgreSQL", len(_backfill))
+        else:
+            log.info("[SHADOW_ANALYTICS] Startup backfill: no records in PostgreSQL yet")
+    except asyncio.TimeoutError:
+        log.warning("[SHADOW_ANALYTICS] Startup backfill timed out (DB slow) — in-memory only")
+    except Exception as _bf_e:
+        log.warning("[SHADOW_ANALYTICS] Startup backfill failed (non-critical): %s", _bf_e)
+
 
 
 def _classify_mismatch(
