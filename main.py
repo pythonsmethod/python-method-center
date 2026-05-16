@@ -1,89 +1,51 @@
-async def _shadow_db_setup_and_backfill():
-    """
-    Phase 4 Step 11: Non-blocking background task that:
-    1. Creates shadow_metrics PostgreSQL table (if DB available)
-    2. Loads last 10,000 rows into in-memory buffer
-    Runs as asyncio.create_task — never blocks app startup.
-    """
-    global _shadow_analytics_buf
-    try:
-        import asyncpg as _apg
-        _db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
-        if not _db_url:
-            log.info("[SHADOW_ANALYTICS] DB setup skipped: no DATABASE_URL")
-            return
-        _pool = await asyncio.wait_for(
-            _apg.create_pool(_db_url, min_size=1, max_size=2, command_timeout=15),
-            timeout=20.0
-        )
-        # Step 1: Create table
-        async with _pool.acquire() as _conn:
-            await _conn.execute("""
-                CREATE TABLE IF NOT EXISTS shadow_metrics (
-                    id            SERIAL PRIMARY KEY,
-                    ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                    contact_id    TEXT NOT NULL,
-                    old_route     TEXT,
-                    shadow_route  TEXT,
-                    route_match   BOOLEAN,
-                    old_intent    TEXT,
-                    shadow_intent TEXT,
-                    intent_match  BOOLEAN,
-                    old_agent     TEXT,
-                    shadow_agent  TEXT,
-                    agent_match   BOOLEAN,
-                    escalation_match  BOOLEAN,
-                    old_reply_len     INTEGER,
-                    shadow_reply_len  INTEGER,
-                    latency_ms        INTEGER,
-                    shadow_error      BOOLEAN DEFAULT FALSE,
-                    mismatch_reason   TEXT,
-                    high_risk         BOOLEAN DEFAULT FALSE
-                )
-            """)
-            await _conn.execute(
-                "CREATE INDEX IF NOT EXISTS shadow_metrics_ts_idx ON shadow_metrics (ts DESC)"
-            )
-        log.info("[SHADOW_ANALYTICS] PostgreSQL shadow_metrics table ready")
-        # Step 2: Backfill buffer
-        async with _pool.acquire() as _conn:
-            _rows = await asyncio.wait_for(
-                _conn.fetch(
-                    """SELECT ts, contact_id,
-                           old_route, shadow_route, route_match,
-                           old_intent, shadow_intent, intent_match,
-                           old_agent, shadow_agent, agent_match,
-                           escalation_match, old_reply_len, shadow_reply_len,
-                           latency_ms, shadow_error, mismatch_reason, high_risk
-                       FROM shadow_metrics ORDER BY ts DESC LIMIT 10000"""
-                ),
-                timeout=15.0
-            )
-        await _pool.close()
-        _backfill = []
-        for _row in reversed(_rows):
-            _rec = dict(_row)
-            _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
-            _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
-            _rec.setdefault("continuity_enriched", False)
-            _rec.setdefault("continuity_score", 0)
-            _rec.setdefault("continuity_changed_route", False)
-            _rec.setdefault("continuity_changed_escalation", False)
-            _rec.setdefault("continuity_changed_next_step", False)
-            _rec.setdefault("continuity_improved_decision", False)
-            _rec.setdefault("continuity_confidence", 0.0)
-            _backfill.append(_rec)
-        if _backfill and _shadow_analytics_buf is not None:
-            async with _get_shadow_analytics_lock():
-                for _br in _backfill:
-                    _shadow_analytics_buf.append(_br)
-            log.info("[SHADOW_ANALYTICS] Startup backfill complete: loaded %d records from PostgreSQL", len(_backfill))
-        else:
-            log.info("[SHADOW_ANALYTICS] Startup backfill: no records in PostgreSQL yet")
-    except asyncio.TimeoutError:
-        log.warning("[SHADOW_ANALYTICS] DB setup timed out — in-memory only")
-    except Exception as _e:
-        log.warning("[SHADOW_ANALYTICS] DB setup failed (non-critical): %s", _e)
+# -*- coding: utf-8 -*-
+# Python Method Center - main server
+# FastAPI + SendPulse + Claude AI Agents + Stripe. Deploy: Railway.
+import asyncio
+import os
+import logging
+import stripe
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, FileResponse
+import httpx
+
+from agents import process_message, on_payment_confirmed, load_session, save_session
+from ai_router import health_check as ai_health_check, ask_claude
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger("python-method")
+
+app = FastAPI(title="Python Method Center")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OFERTA_PATH = os.path.join(BASE_DIR, "Python Method Oferta v2.pdf")
+OFERTA_URL = "https://python-method-center-production-24ec.up.railway.app/documents/oferta"
+
+SENDPULSE_CLIENT_ID = os.environ.get("SENDPULSE_CLIENT_ID")
+SENDPULSE_CLIENT_SECRET = os.environ.get("SENDPULSE_CLIENT_SECRET")
+
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+
+if STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
+
+sessions = {}
+
+
+# ============================================================
+# SENDPULSE
+# ============================================================
+# Phase 4 Step 6: In-memory OAuth token cache.
+# Eliminates one HTTP round-trip per message (was: OAuth + send, now: send only on cache hit).
+_sp_token_lock = asyncio.Lock()
+_sp_token_cache: dict = {"token": None, "expires_at": 0.0}
+_SP_TOKEN_TTL = 3600        # SendPulse access_token lifetime (seconds)
+_SP_TOKEN_BUFFER = 60       # Refresh 60s before actual expiry (safety buffer)
+
 
 async def get_sendpulse_token() -> "str | None":
     """
@@ -819,52 +781,96 @@ async def _shadow_analytics_init():
     _get_shadow_analytics_lock()
     _shadow_analytics_buf = _collections.deque(maxlen=_SHADOW_ANALYTICS_MAXLEN)
     log.info("[SHADOW_ANALYTICS] In-memory buffer initialized (maxlen=%d)", _SHADOW_ANALYTICS_MAXLEN)
-    # Phase 4 Step 11 FIX: schedule entire DB setup as non-blocking background task
+    # Phase 4 Step 11: Move all PG operations to background task (non-blocking startup)
     asyncio.create_task(_shadow_db_setup_and_backfill())
-    log.info("[SHADOW_ANALYTICS] PostgreSQL setup + backfill scheduled as background task")
+    log.info("[SHADOW_ANALYTICS] DB setup + backfill scheduled as background task")
 
-def _classify_mismatch(
-    route_match, intent_match, agent_match, escalation_match,
-    old_route, shadow_route, old_intent, shadow_intent,
-    old_reply_len, shadow_reply_len, shadow_error, latency_ms,
-):
-    """Return list of mismatch reason codes for this observation."""
-    reasons = []
-    if shadow_error:
-        reasons.append("shadow_error")
-        return reasons
-    if not route_match:
-        reasons.append("route_mismatch")
-    if not intent_match:
-        reasons.append("intent_mismatch")
-    if not agent_match:
-        reasons.append("agent_mismatch")
-    if not escalation_match:
-        reasons.append("escalation_mismatch")
-    _emotional = frozenset({"crisis", "fear", "emotional", "mental_health", "empathy"})
-    if bool(_emotional & {old_route.lower()}) != bool(_emotional & {shadow_route.lower()}):
-        reasons.append("emotional_mismatch")
-    if old_reply_len > 0 and shadow_reply_len > 0:
-        ratio = max(old_reply_len, shadow_reply_len) / min(old_reply_len, shadow_reply_len)
-        if ratio > 3.0:
-            reasons.append("continuity_mismatch")
-    if latency_ms > 5000:
-        reasons.append("latency_spike")
-    return reasons
-
-
-def _is_high_risk_event(old_route, shadow_route, old_intent, shadow_intent, escalation_match):
-    """Return True if this shadow observation involves high-risk scenario."""
-    routes = {old_route.lower(), shadow_route.lower()}
-    intents = {old_intent.lower(), shadow_intent.lower()}
-    if routes & _SHADOW_HIGH_RISK_ROUTES:
-        return True
-    if intents & _SHADOW_HIGH_RISK_INTENTS:
-        return True
-    if not escalation_match:
-        return True
-    return False
-
+async def _shadow_db_setup_and_backfill():
+    """
+    Phase 4 Step 11: Non-blocking background task that:
+    1. Creates shadow_metrics PostgreSQL table (if DB available)
+    2. Loads last 10,000 rows into in-memory buffer
+    Runs as asyncio.create_task — never blocks app startup.
+    """
+    global _shadow_analytics_buf
+    try:
+        import asyncpg as _apg
+        _db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+        if not _db_url:
+            log.info("[SHADOW_ANALYTICS] DB setup skipped: no DATABASE_URL")
+            return
+        _pool = await asyncio.wait_for(
+            _apg.create_pool(_db_url, min_size=1, max_size=2, command_timeout=15),
+            timeout=20.0
+        )
+        # Step 1: Create table
+        async with _pool.acquire() as _conn:
+            await _conn.execute("""
+                CREATE TABLE IF NOT EXISTS shadow_metrics (
+                    id            SERIAL PRIMARY KEY,
+                    ts            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    contact_id    TEXT NOT NULL,
+                    old_route     TEXT,
+                    shadow_route  TEXT,
+                    route_match   BOOLEAN,
+                    old_intent    TEXT,
+                    shadow_intent TEXT,
+                    intent_match  BOOLEAN,
+                    old_agent     TEXT,
+                    shadow_agent  TEXT,
+                    agent_match   BOOLEAN,
+                    escalation_match  BOOLEAN,
+                    old_reply_len     INTEGER,
+                    shadow_reply_len  INTEGER,
+                    latency_ms        INTEGER,
+                    shadow_error      BOOLEAN DEFAULT FALSE,
+                    mismatch_reason   TEXT,
+                    high_risk         BOOLEAN DEFAULT FALSE
+                )
+            """)
+            await _conn.execute(
+                "CREATE INDEX IF NOT EXISTS shadow_metrics_ts_idx ON shadow_metrics (ts DESC)"
+            )
+        log.info("[SHADOW_ANALYTICS] PostgreSQL shadow_metrics table ready")
+        # Step 2: Backfill buffer
+        async with _pool.acquire() as _conn:
+            _rows = await asyncio.wait_for(
+                _conn.fetch(
+                    """SELECT ts, contact_id,
+                           old_route, shadow_route, route_match,
+                           old_intent, shadow_intent, intent_match,
+                           old_agent, shadow_agent, agent_match,
+                           escalation_match, old_reply_len, shadow_reply_len,
+                           latency_ms, shadow_error, mismatch_reason, high_risk
+                       FROM shadow_metrics ORDER BY ts DESC LIMIT 10000"""
+                ),
+                timeout=15.0
+            )
+        await _pool.close()
+        _backfill = []
+        for _row in reversed(_rows):
+            _rec = dict(_row)
+            _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
+            _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
+            _rec.setdefault("continuity_enriched", False)
+            _rec.setdefault("continuity_score", 0)
+            _rec.setdefault("continuity_changed_route", False)
+            _rec.setdefault("continuity_changed_escalation", False)
+            _rec.setdefault("continuity_changed_next_step", False)
+            _rec.setdefault("continuity_improved_decision", False)
+            _rec.setdefault("continuity_confidence", 0.0)
+            _backfill.append(_rec)
+        if _backfill and _shadow_analytics_buf is not None:
+            async with _get_shadow_analytics_lock():
+                for _br in _backfill:
+                    _shadow_analytics_buf.append(_br)
+            log.info("[SHADOW_ANALYTICS] Startup backfill complete: loaded %d records from PostgreSQL", len(_backfill))
+        else:
+            log.info("[SHADOW_ANALYTICS] Startup backfill: no records in PostgreSQL yet")
+    except asyncio.TimeoutError:
+        log.warning("[SHADOW_ANALYTICS] DB setup timed out — in-memory only")
+    except Exception as _e:
+        log.warning("[SHADOW_ANALYTICS] DB setup failed (non-critical): %s", _e)
 
 async def _save_shadow_metric(record):
     """
