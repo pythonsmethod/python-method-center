@@ -747,6 +747,8 @@ import statistics as _statistics
 # In-memory ring buffer for shadow analytics (max 10 000 entries)
 _SHADOW_ANALYTICS_MAXLEN = 10_000
 _shadow_analytics_buf = None  # init in _shadow_analytics_init
+_last_webhook_ts = None            # float: monotonic time of last /webhook POST
+_traffic_was_silent = False        # bool: True when heartbeat logged TRAFFIC_WARN
 _shadow_analytics_lock = None  # asyncio.Lock — init lazily
 
 # High-risk routes/intents that require extra alerting
@@ -815,6 +817,41 @@ async def _shadow_analytics_init():
             )
         await _pool.close()
         log.info("[SHADOW_ANALYTICS] PostgreSQL shadow_metrics table ready")
+        # --- Phase 4 Step 11: Startup backfill — load last 10,000 rows into buffer ---
+        try:
+            _rows = await _conn.fetch(
+                """SELECT ts, contact_id,
+                       old_route, shadow_route, route_match,
+                       old_intent, shadow_intent, intent_match,
+                       old_agent, shadow_agent, agent_match,
+                       escalation_match, old_reply_len, shadow_reply_len,
+                       latency_ms, shadow_error, mismatch_reason, high_risk
+                   FROM shadow_metrics
+                   ORDER BY ts DESC LIMIT 10000"""
+            )
+            _backfill = []
+            for _row in reversed(_rows):  # oldest first
+                _rec = dict(_row)
+                _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
+                _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
+                # Continuity fields default (not stored in DB yet)
+                _rec.setdefault("continuity_enriched", False)
+                _rec.setdefault("continuity_score", 0)
+                _rec.setdefault("continuity_changed_route", False)
+                _rec.setdefault("continuity_changed_escalation", False)
+                _rec.setdefault("continuity_changed_next_step", False)
+                _rec.setdefault("continuity_improved_decision", False)
+                _rec.setdefault("continuity_confidence", 0.0)
+                _backfill.append(_rec)
+            if _backfill:
+                async with _get_shadow_analytics_lock():
+                    for _br in _backfill:
+                        _shadow_analytics_buf.append(_br)
+                log.info("[SHADOW_ANALYTICS] Startup backfill: loaded %d records from PostgreSQL", len(_backfill))
+            else:
+                log.info("[SHADOW_ANALYTICS] Startup backfill: no records in PostgreSQL yet")
+        except Exception as _bf_e:
+            log.warning("[SHADOW_ANALYTICS] Startup backfill failed (non-critical): %s", _bf_e)
     except Exception as _e:
         log.warning("[SHADOW_ANALYTICS] PostgreSQL setup failed (%s) — in-memory only", _e)
 
@@ -898,6 +935,13 @@ async def _save_shadow_metric(record):
                 record.get("high_risk", False),
             )
         await _pool.close()
+        log.debug(
+            "[SHADOW_DB] stored record contact=%s route_match=%s latency_ms=%s error=%s",
+            record.get("contact_id", "?"),
+            record.get("route_match", "?"),
+            record.get("latency_ms", "?"),
+            record.get("shadow_error", False),
+        )
     except Exception as _e:
         log.debug("[SHADOW_ANALYTICS] DB save failed (non-critical): %s", _e)
 
@@ -977,12 +1021,52 @@ def _compute_shadow_aggregates(records):
 
 
 async def generate_shadow_report():
-    """Generate daily shadow analytics report from in-memory buffer."""
+    """
+    Generate shadow analytics report.
+    Phase 4 Step 11: hybrid approach — reads in-memory buffer + PostgreSQL fallback.
+    Adds collection window metadata (oldest/newest timestamps).
+    """
     global _shadow_analytics_buf
     if _shadow_analytics_buf is None:
         return {"error": "shadow analytics not initialized"}
     async with _get_shadow_analytics_lock():
         records = list(_shadow_analytics_buf)
+    _source = "memory"
+    # Phase 4 Step 11: PostgreSQL fallback when buffer empty
+    if not records:
+        try:
+            import asyncpg as _apg
+            _db_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PRIVATE_URL")
+            if _db_url:
+                _pool = await _apg.create_pool(_db_url, min_size=1, max_size=1, command_timeout=10)
+                async with _pool.acquire() as _conn:
+                    _rows = await _conn.fetch(
+                        """SELECT ts, contact_id,
+                               old_route, shadow_route, route_match,
+                               old_intent, shadow_intent, intent_match,
+                               old_agent, shadow_agent, agent_match,
+                               escalation_match, old_reply_len, shadow_reply_len,
+                               latency_ms, shadow_error, mismatch_reason, high_risk
+                           FROM shadow_metrics ORDER BY ts DESC LIMIT 10000"""
+                    )
+                await _pool.close()
+                records = []
+                for _row in reversed(_rows):
+                    _rec = dict(_row)
+                    _rec["ts"] = _rec["ts"].replace(tzinfo=None) if _rec.get("ts") else _datetime.datetime.utcnow()
+                    _rec["mismatch_reasons"] = [x for x in (_rec.pop("mismatch_reason", "") or "").split(",") if x]
+                    _rec.setdefault("continuity_enriched", False)
+                    _rec.setdefault("continuity_score", 0)
+                    _rec.setdefault("continuity_changed_route", False)
+                    _rec.setdefault("continuity_changed_escalation", False)
+                    _rec.setdefault("continuity_changed_next_step", False)
+                    _rec.setdefault("continuity_improved_decision", False)
+                    _rec.setdefault("continuity_confidence", 0.0)
+                    records.append(_rec)
+                _source = "postgresql_fallback"
+                log.info("[SHADOW_ANALYTICS] Report: loaded %d records from PostgreSQL (memory was empty)", len(records))
+        except Exception as _fb_e:
+            log.debug("[SHADOW_ANALYTICS] PostgreSQL fallback failed: %s", _fb_e)
     now = _datetime.datetime.utcnow()
     cutoff = now - _datetime.timedelta(hours=24)
     recent = [r for r in records if r.get("ts") and r["ts"] >= cutoff]
@@ -994,15 +1078,31 @@ async def generate_shadow_report():
     elif readiness >= 75:
         recommendation = "NEAR_READY: Good match rate. Fix top mismatches before traffic shift."
     elif readiness >= 50:
-        recommendation = "IMPROVING: Significant mismatches remain. Continue shadow monitoring."
+        recommendation = "IMPROVING: Significant mismatches remain. Continue shadow validation."
     else:
         recommendation = "NOT_READY: Too many mismatches. Investigate root causes before any traffic shift."
+    # Phase 4 Step 11: Collection window metadata
+    ts_list = [r["ts"] for r in records if r.get("ts")]
+    oldest_ts = min(ts_list).isoformat() + "Z" if ts_list else None
+    newest_ts = max(ts_list).isoformat() + "Z" if ts_list else None
+    window_hours = None
+    if ts_list and len(ts_list) >= 2:
+        window_hours = round((max(ts_list) - min(ts_list)).total_seconds() / 3600, 2)
+    mem_count = len(list(_shadow_analytics_buf)) if _shadow_analytics_buf is not None else 0
     return {
         "report_generated_at": now.isoformat() + "Z",
         "all_time": all_agg,
         "last_24h": day_agg,
         "orchestrator_readiness_score": readiness,
         "recommendation": recommendation,
+        "collection_metadata": {
+            "oldest_record_timestamp": oldest_ts,
+            "newest_record_timestamp": newest_ts,
+            "effective_collection_window_hours": window_hours,
+            "records_in_memory": mem_count,
+            "records_loaded_from_db": len(records) if _source == "postgresql_fallback" else 0,
+            "data_source": _source,
+        },
     }
 
 
@@ -1279,6 +1379,13 @@ async def webhook_v2(request: Request):
     PIPELINE_SHADOW_MODE=true       -> old pipeline sends, new observes
     Both false                      -> pure old pipeline (no change)
     """
+    # Phase 4 Step 11: Traffic heartbeat
+    global _last_webhook_ts, _traffic_was_silent
+    import time as _time_step11
+    _last_webhook_ts = _time_step11.monotonic()
+    if _traffic_was_silent:
+        _traffic_was_silent = False
+        log.info("[TRAFFIC_OK] Webhook traffic resumed")
     t_start = _time.monotonic()
 
     try:
@@ -1455,12 +1562,41 @@ async def risk_governance():
 
 
 @app.on_event("startup")
+async def _traffic_heartbeat():
+    """
+    Phase 4 Step 11: Monitor webhook traffic.
+    Logs [TRAFFIC_WARN] if no POST /webhook for >30 minutes.
+    Logs [TRAFFIC_OK] when traffic resumes.
+    """
+    global _last_webhook_ts, _traffic_was_silent
+    import time as _time_mod
+    while True:
+        await asyncio.sleep(300)  # check every 5 minutes
+        now_mono = _time_mod.monotonic()
+        if _last_webhook_ts is None:
+            elapsed = None  # never received any webhook
+        else:
+            elapsed = now_mono - _last_webhook_ts
+        if elapsed is None or elapsed > 1800:  # >30 minutes
+            if not _traffic_was_silent:
+                _traffic_was_silent = True
+                elapsed_min = round(elapsed / 60, 1) if elapsed else "never"
+                log.warning("[TRAFFIC_WARN] No webhook traffic detected in %s minutes", elapsed_min)
+        else:
+            if _traffic_was_silent:
+                _traffic_was_silent = False
+                log.info("[TRAFFIC_OK] Webhook traffic resumed (last %.1fs ago)", elapsed)
+
+
 async def on_startup():
     log.info("[STARTUP] Phase 3.19 InstitutionalMemoryEngine — background-only, fail-safe, neutral_result on all exceptions")
     log.info("[STARTUP] USE_NEW_MESSAGE_PIPELINE=%s PIPELINE_SHADOW_MODE=%s",
              USE_NEW_MESSAGE_PIPELINE, PIPELINE_SHADOW_MODE)
     # Phase 4 Step 7: Initialize shadow analytics storage
     await _shadow_analytics_init()
+    # Phase 4 Step 11: Launch traffic heartbeat monitor
+    asyncio.create_task(_traffic_heartbeat())
+    log.info("[STARTUP] Traffic heartbeat monitor started (30-min silence threshold)")
     if USE_NEW_MESSAGE_PIPELINE or PIPELINE_SHADOW_MODE:
         log.info("[STARTUP] Starting pipeline workers...")
         await _start_pipeline_workers()
