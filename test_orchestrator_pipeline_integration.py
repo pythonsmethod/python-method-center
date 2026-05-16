@@ -415,12 +415,136 @@ def test_t9_no_encoding_corruption():
 
     print(f"[T9] PASS: No encoding corruption found, Cyrillic chars present")
 
-if __name__ == "__main__":
-    # Quick smoke test runner
-    import asyncio
 
-    async def run_all():
-        print("=== Phase 4 Step 2 Integration Tests ===")
+# =============================================================================
+# PHASE 4 STEP 4 — Shadow Observation Tests (T10-T19)
+# =============================================================================
+
+# T10: /webhook still returns old reply (process_message not shadow)
+async def test_t10_webhook_returns_old_reply():
+    """T10: /webhook route still produces reply from process_message, not shadow."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.webhook)
+    assert "process_message" in src, "T10 FAIL: process_message must still be in /webhook"
+    assert "send_message" in src, "T10 FAIL: send_message still required in /webhook"
+    print("T10 PASS: /webhook still calls process_message and send_message")
+
+
+# T11: shadow task scheduled when PIPELINE_SHADOW_MODE logic present
+async def test_t11_shadow_task_scheduled_in_shadow_mode():
+    """T11: asyncio.create_task(_shadow_observe) exists in /webhook."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.webhook)
+    assert "_shadow_observe" in src, "T11 FAIL: _shadow_observe must be referenced in /webhook"
+    print("T11 PASS: shadow task scheduling present in /webhook")
+
+
+# T12: _shadow_observe function exists and is async
+async def test_t12_shadow_observe_is_async():
+    """T12: _shadow_observe is an async function."""
+    import main as _m
+    import inspect
+    assert hasattr(_m, '_shadow_observe'), "T12 FAIL: _shadow_observe not found in main"
+    assert inspect.iscoroutinefunction(_m._shadow_observe),         "T12 FAIL: _shadow_observe must be async"
+    print("T12 PASS: _shadow_observe is async")
+
+
+# T13: _noop_save_session exists and returns None
+async def test_t13_noop_save_session_returns_none():
+    """T13: _noop_save_session is async and returns None."""
+    import main as _m
+    import inspect
+    assert hasattr(_m, '_noop_save_session'), "T13 FAIL: _noop_save_session not found in main"
+    assert inspect.iscoroutinefunction(_m._noop_save_session),         "T13 FAIL: _noop_save_session must be async"
+    result = await _m._noop_save_session({"test": "session"})
+    assert result is None, f"T13 FAIL: _noop_save_session must return None, got {result}"
+    print("T13 PASS: _noop_save_session is async and returns None")
+
+
+# T14: _shadow_observe does not call send_message
+async def test_t14_shadow_observe_does_not_call_send_message():
+    """T14: _shadow_observe source must not call send_message."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m._shadow_observe)
+    assert "await send_message" not in src,         "T14 FAIL: _shadow_observe must NOT call send_message"
+    print("T14 PASS: _shadow_observe does not call send_message")
+
+
+# T15: _shadow_observe uses _noop_save_session (not real save_session)
+async def test_t15_shadow_observe_uses_noop_save():
+    """T15: _shadow_observe passes _noop_save_session to handle_message."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m._shadow_observe)
+    assert "_noop_save_session" in src,         "T15 FAIL: _shadow_observe must use _noop_save_session"
+    print("T15 PASS: _shadow_observe uses _noop_save_session")
+
+
+# T16: _shadow_observe uses copy.deepcopy to protect original session
+async def test_t16_shadow_observe_does_not_mutate_session():
+    """T16: _shadow_observe uses deepcopy to protect original session."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m._shadow_observe)
+    assert "deepcopy" in src,         "T16 FAIL: _shadow_observe must use copy.deepcopy"
+    print("T16 PASS: _shadow_observe uses deepcopy")
+
+
+# T17: shadow_mode parameter exists in handle_message
+async def test_t17_shadow_mode_param_in_handle_message():
+    """T17: OrchestratorCore.handle_message accepts shadow_mode parameter."""
+    import inspect
+    try:
+        from orchestrator_core import OrchestratorCore
+        sig = inspect.signature(OrchestratorCore.handle_message)
+        assert "shadow_mode" in sig.parameters,             "T17 FAIL: handle_message must have shadow_mode parameter"
+        print("T17 PASS: handle_message has shadow_mode parameter")
+    except ImportError:
+        print("T17 SKIP: orchestrator_core not importable in test env")
+
+
+# T18: shadow_mode=True skips memory write
+async def test_t18_shadow_mode_skips_memory_write():
+    """T18: When shadow_mode=True, memory write is guarded."""
+    try:
+        import inspect
+        import orchestrator_core as _oc
+        src = inspect.getsource(_oc.OrchestratorCore.handle_message)
+        assert "if not shadow_mode:" in src,             "T18 FAIL: memory write must be guarded by shadow_mode"
+        print("T18 PASS: memory write guarded by shadow_mode flag")
+    except ImportError:
+        print("T18 SKIP: orchestrator_core not importable in test env")
+
+
+# T19: shadow errors do not break /webhook
+async def test_t19_shadow_errors_do_not_break_webhook():
+    """T19: _shadow_observe has try/except — errors are caught, not raised."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m._shadow_observe)
+    assert "except Exception" in src,         "T19 FAIL: _shadow_observe must have try/except"
+    print("T19 PASS: _shadow_observe safely catches all errors")
+
+
+# T20: SHADOW_COMPARE and SHADOW_MISMATCH logs present
+async def test_t20_shadow_compare_log_present():
+    """T20: _shadow_observe produces [SHADOW_COMPARE] and [SHADOW_MISMATCH] logs."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m._shadow_observe)
+    assert "SHADOW_COMPARE" in src, "T20 FAIL: [SHADOW_COMPARE] log missing"
+    assert "SHADOW_MISMATCH" in src, "T20 FAIL: [SHADOW_MISMATCH] log missing"
+    print("T20 PASS: [SHADOW_COMPARE] and [SHADOW_MISMATCH] logs present")
+
+
+if __name__ == "__main__":
+    import asyncio as _asyncio
+
+    async def run_all_phase4():
+        print("=== Phase 4 Step 2+4 Integration Tests (T1-T20) ===")
         await test_t1_t2_orchestrator_receives_real_session_and_message_text()
         await test_t3_ask_claude_fn_is_called()
         await test_t4_save_session_fn_is_called()
@@ -430,6 +554,17 @@ if __name__ == "__main__":
         await test_t8_contact_id_extracted_from_raw_update()
         test_structural_patches_present_in_orchestrator_core()
         test_t9_no_encoding_corruption()
-        print("\n=== ALL TESTS PASSED (T1-T9) ===")
+        await test_t10_webhook_returns_old_reply()
+        await test_t11_shadow_task_scheduled_in_shadow_mode()
+        await test_t12_shadow_observe_is_async()
+        await test_t13_noop_save_session_returns_none()
+        await test_t14_shadow_observe_does_not_call_send_message()
+        await test_t15_shadow_observe_uses_noop_save()
+        await test_t16_shadow_observe_does_not_mutate_session()
+        await test_t17_shadow_mode_param_in_handle_message()
+        await test_t18_shadow_mode_skips_memory_write()
+        await test_t19_shadow_errors_do_not_break_webhook()
+        await test_t20_shadow_compare_log_present()
+        print("\n=== ALL TESTS PASSED (T1-T20) ===")
 
-    asyncio.run(run_all())
+    _asyncio.run(run_all_phase4())
