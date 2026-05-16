@@ -791,11 +791,158 @@ async def test_t34_generate_shadow_report_structure():
     print(f"T34 PASS: generate_shadow_report structure correct, score={report['orchestrator_readiness_score']}, rec='{report['recommendation'][:40]}...'")
 
 
+
+# ===========================================================================
+# PHASE 4 STEP 8: Continuity Intelligence Tests (T35-T44)
+# ===========================================================================
+
+def test_t35_new_user_has_neutral_or_low_score():
+    """T35: New user (empty session) has low/neutral continuity score."""
+    from continuity_intelligence import ContinuityAnalyzer
+    analyzer = ContinuityAnalyzer(contact_id="t35_new_user")
+    snap = analyzer.analyze(session={})
+    assert snap.continuity_health_score <= 60, \
+        f"T35 FAIL: new user score {snap.continuity_health_score} should be <= 60"
+    print(f"T35 PASS: new user score={snap.continuity_health_score} band={snap.health_band}")
+
+
+def test_t36_payment_without_onboarding_flag():
+    """T36: Paid user without onboarding -> PAYMENT_WITHOUT_ONBOARDING flag."""
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_PAYMENT_WITHOUT_ONBOARDING
+    analyzer = ContinuityAnalyzer(contact_id="t36_paid_user")
+    snap = analyzer.analyze(
+        session={"stripe_session_id": "sess_abc", "payment_confirmed": True},
+        payment_status="paid",
+        onboarding_status="not_started",
+    )
+    assert FLAG_PAYMENT_WITHOUT_ONBOARDING in snap.risk_flags, \
+        f"T36 FAIL: expected PAYMENT_WITHOUT_ONBOARDING in {snap.risk_flags}"
+    assert snap.payment_to_onboarding_gap is True, "T36 FAIL: payment_to_onboarding_gap should be True"
+    print(f"T36 PASS: PAYMENT_WITHOUT_ONBOARDING detected")
+
+
+def test_t37_stuck_user_flag():
+    """T37: User inactive after step for 4 days -> STUCK_USER flag."""
+    import datetime as dt
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_STUCK_USER
+    last_contact = (dt.datetime.utcnow() - dt.timedelta(days=4)).isoformat()
+    analyzer = ContinuityAnalyzer(contact_id="t37_stuck_user")
+    snap = analyzer.analyze(session={
+        "pending_action": "Waiting for user to submit homework",
+        "last_contact_at": last_contact,
+    })
+    assert FLAG_STUCK_USER in snap.risk_flags, \
+        f"T37 FAIL: expected STUCK_USER in {snap.risk_flags}"
+    print(f"T37 PASS: STUCK_USER detected after {snap.days_since_last_contact:.1f} days")
+
+
+def test_t38_returned_after_pause_flag():
+    """T38: User returned after 8+ day pause -> RETURNED_AFTER_PAUSE flag."""
+    import datetime as dt
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_RETURNED_AFTER_PAUSE
+    last_contact = (dt.datetime.utcnow() - dt.timedelta(days=8)).isoformat()
+    analyzer = ContinuityAnalyzer(contact_id="t38_returned_user")
+    snap = analyzer.analyze(session={"last_contact_at": last_contact})
+    assert snap.return_after_pause is True, "T38 FAIL: return_after_pause should be True"
+    assert FLAG_RETURNED_AFTER_PAUSE in snap.risk_flags, \
+        f"T38 FAIL: expected RETURNED_AFTER_PAUSE in {snap.risk_flags}"
+    print(f"T38 PASS: RETURNED_AFTER_PAUSE detected, days={snap.days_since_last_contact:.1f}")
+
+
+def test_t39_next_step_missing_flag():
+    """T39: Empty session has no next step -> NEXT_STEP_MISSING flag."""
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_NEXT_STEP_MISSING
+    analyzer = ContinuityAnalyzer(contact_id="t39_no_next_step")
+    snap = analyzer.analyze(session={})
+    assert FLAG_NEXT_STEP_MISSING in snap.risk_flags, \
+        f"T39 FAIL: expected NEXT_STEP_MISSING in {snap.risk_flags}"
+    print(f"T39 PASS: NEXT_STEP_MISSING detected")
+
+
+def test_t40_escalation_pending_flag():
+    """T40: Escalation flagged -> ESCALATION_NOT_ACKED flag."""
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_ESCALATION_NOT_ACKED
+    analyzer = ContinuityAnalyzer(contact_id="t40_escalation")
+    snap = analyzer.analyze(session={"escalation_flag": True}, escalation_status=None)
+    assert snap.escalation_pending is True, "T40 FAIL: escalation_pending should be True"
+    assert FLAG_ESCALATION_NOT_ACKED in snap.risk_flags, \
+        f"T40 FAIL: expected ESCALATION_NOT_ACKED in {snap.risk_flags}"
+    print(f"T40 PASS: ESCALATION_NOT_ACKED detected")
+
+
+def test_t41_memory_weak_flag():
+    """T41: Low memory completeness -> MEMORY_WEAK flag."""
+    from continuity_intelligence import ContinuityAnalyzer, FLAG_MEMORY_WEAK
+    analyzer = ContinuityAnalyzer(contact_id="t41_weak_memory")
+    snap = analyzer.analyze(
+        session={},
+        memory_fields={"name": "Alice", "goal": None, "phone": None, "email": None, "age": None},
+    )
+    assert snap.memory_quality <= 0.3, f"T41 FAIL: memory_quality should be <= 0.3, got {snap.memory_quality}"
+    assert FLAG_MEMORY_WEAK in snap.risk_flags, \
+        f"T41 FAIL: expected MEMORY_WEAK in {snap.risk_flags}"
+    print(f"T41 PASS: MEMORY_WEAK detected, memory_quality={snap.memory_quality}")
+
+
+def test_t42_healthy_route_score_85_plus():
+    """T42: Well-configured session -> continuity score 85+."""
+    import datetime as dt
+    from continuity_intelligence import ContinuityAnalyzer
+    recent = (dt.datetime.utcnow() - dt.timedelta(hours=2)).isoformat()
+    analyzer = ContinuityAnalyzer(contact_id="t42_healthy_user")
+    snap = analyzer.analyze(
+        session={
+            "current_route": "rehabilitation",
+            "current_stage": "week_3",
+            "last_contact_at": recent,
+            "pending_action": "Review week 3 plan",
+            "memory_completeness": 85,
+        },
+        memory_fields={"name": "Alice", "goal": "recovery", "program": "12weeks", "phone": "123", "email": "a@b.com"},
+        payment_status="paid",
+        onboarding_status="complete",
+    )
+    assert snap.continuity_health_score >= 85, \
+        f"T42 FAIL: healthy score should be >= 85, got {snap.continuity_health_score}"
+    assert snap.health_band == "healthy", f"T42 FAIL: expected healthy, got {snap.health_band}"
+    print(f"T42 PASS: healthy score={snap.continuity_health_score} band={snap.health_band}")
+
+
+def test_t43_analyzer_does_not_mutate_session():
+    """T43: ContinuityAnalyzer does not mutate the input session dict."""
+    from continuity_intelligence import ContinuityAnalyzer
+    original = {"current_route": "main", "memory_completeness": 50}
+    session_copy = dict(original)
+    analyzer = ContinuityAnalyzer(contact_id="t43_immutable")
+    _ = analyzer.analyze(session=session_copy)
+    assert session_copy == original, \
+        f"T43 FAIL: session was mutated. Before={original}, after={session_copy}"
+    print("T43 PASS: analyzer does not mutate session")
+
+
+def test_t44_analyzer_does_not_send_messages():
+    """T44: ContinuityAnalyzer does not call send_message or any send function."""
+    import main as _m
+    original_send = _m.send_message
+    call_count = [0]
+    async def mock_send(*a, **kw):
+        call_count[0] += 1
+        return True
+    _m.send_message = mock_send
+    try:
+        from continuity_intelligence import ContinuityAnalyzer
+        analyzer = ContinuityAnalyzer(contact_id="t44_no_send")
+        _ = analyzer.analyze(session={"current_route": "main"})
+        assert call_count[0] == 0, f"T44 FAIL: send_message was called {call_count[0]} times"
+        print("T44 PASS: analyzer does not send messages")
+    finally:
+        _m.send_message = original_send
+
 if __name__ == "__main__":
     import asyncio as _asyncio
 
     async def run_all_phase4():
-        print("=== Phase 4 Step 2+4+6+7 Integration Tests (T1-T34) ===")
+        print("=== Phase 4 Step 2+4+6+7+8 Integration Tests (T1-T44) ===")
         await test_t1_t2_orchestrator_receives_real_session_and_message_text()
         await test_t3_ask_claude_fn_is_called()
         await test_t4_save_session_fn_is_called()
@@ -816,14 +963,12 @@ if __name__ == "__main__":
         await test_t18_shadow_mode_skips_memory_write()
         await test_t19_shadow_errors_do_not_break_webhook()
         await test_t20_shadow_compare_log_present()
-        # Phase 4 Step 6 token cache tests
         await test_t21_first_call_fetches_token()
         await test_t22_second_call_uses_cache()
         await test_t23_expired_token_triggers_refresh()
         await test_t24_token_not_in_logs()
         await test_t25_send_message_calls_token_fn()
         await test_t26_send_document_calls_token_fn()
-        # Phase 4 Step 7 shadow analytics tests
         await test_t27_shadow_analytics_init()
         await test_t28_save_shadow_metric_appends_to_buffer()
         test_t29_classify_mismatch_route_mismatch()
@@ -832,6 +977,17 @@ if __name__ == "__main__":
         test_t32_is_high_risk_event_crisis_route()
         await test_t33_compute_aggregates_match_rates()
         await test_t34_generate_shadow_report_structure()
-        print("\n=== ALL TESTS PASSED (T1-T34) ===")
+        # Phase 4 Step 8: Continuity Intelligence tests
+        test_t35_new_user_has_neutral_or_low_score()
+        test_t36_payment_without_onboarding_flag()
+        test_t37_stuck_user_flag()
+        test_t38_returned_after_pause_flag()
+        test_t39_next_step_missing_flag()
+        test_t40_escalation_pending_flag()
+        test_t41_memory_weak_flag()
+        test_t42_healthy_route_score_85_plus()
+        test_t43_analyzer_does_not_mutate_session()
+        test_t44_analyzer_does_not_send_messages()
+        print("\n=== ALL TESTS PASSED (T1-T44) ===")
 
     _asyncio.run(run_all_phase4())
