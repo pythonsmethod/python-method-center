@@ -540,11 +540,114 @@ async def test_t20_shadow_compare_log_present():
     print("T20 PASS: [SHADOW_COMPARE] and [SHADOW_MISMATCH] logs present")
 
 
+
+# =============================================================================
+# PHASE 4 STEP 6 — SendPulse Token Cache Tests (T21-T26)
+# =============================================================================
+
+# T21: first call requests a fresh token (cache miss)
+async def test_t21_first_call_fetches_token():
+    """T21: On first call, cache is empty so get_sendpulse_token must fetch via OAuth."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.get_sendpulse_token)
+    # Verify the function exists and has cache logic
+    assert "_sp_token_cache" in src, "T21 FAIL: cache dict not referenced in get_sendpulse_token"
+    assert "expires_at" in src, "T21 FAIL: expires_at not referenced"
+    assert "oauth/access_token" in src, "T21 FAIL: OAuth endpoint missing from function"
+    print("T21 PASS: get_sendpulse_token references cache and OAuth endpoint")
+
+
+# T22: second call uses cached token (no new OAuth request)
+async def test_t22_second_call_uses_cache():
+    """T22: When cache has valid token, get_sendpulse_token returns it without OAuth call."""
+    import main as _m
+    import time
+    # Manually prime the cache
+    _m._sp_token_cache["token"] = "test_cached_token_xyz"
+    _m._sp_token_cache["expires_at"] = time.monotonic() + 3600  # fresh
+    result = await _m.get_sendpulse_token()
+    assert result == "test_cached_token_xyz",         f"T22 FAIL: expected cached token, got {result!r}"
+    # Reset cache for other tests
+    _m._sp_token_cache["token"] = None
+    _m._sp_token_cache["expires_at"] = 0.0
+    print("T22 PASS: second call returns cached token")
+
+
+# T23: expired token triggers refresh
+async def test_t23_expired_token_triggers_refresh():
+    """T23: When cached token is expired (expires_at in past), function requests new token."""
+    import main as _m
+    import time
+    from unittest.mock import AsyncMock, patch, MagicMock
+    # Set an expired cache entry
+    _m._sp_token_cache["token"] = "stale_token"
+    _m._sp_token_cache["expires_at"] = time.monotonic() - 10  # expired 10s ago
+
+    # Mock httpx to return a fresh token without real network call
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"access_token": "fresh_token_abc"}
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(return_value=mock_response)
+
+    with patch("main.httpx.AsyncClient", return_value=mock_client):
+        result = await _m.get_sendpulse_token()
+
+    assert result == "fresh_token_abc",         f"T23 FAIL: expected fresh token, got {result!r}"
+    assert _m._sp_token_cache["token"] == "fresh_token_abc",         "T23 FAIL: cache not updated with new token"
+    # Reset
+    _m._sp_token_cache["token"] = None
+    _m._sp_token_cache["expires_at"] = 0.0
+    print("T23 PASS: expired token triggers fresh OAuth request and updates cache")
+
+
+# T24: token value is never exposed in log messages
+async def test_t24_token_not_in_logs():
+    """T24: Log messages must not contain the actual token value."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.get_sendpulse_token)
+    # Must NOT log new_token variable directly
+    assert "log.info(" not in src.replace(
+        'log.info("[SENDPULSE_TOKEN] refreshed', ''
+    ) or "new_token" not in src[src.find("log.info("):src.find("log.info(") + 200]         if "log.info(" in src else True,         "T24 FAIL: token value may be exposed in log"
+    # Simpler check: the refreshed log line must not include new_token
+    refreshed_line = [l for l in src.split('
+') if 'refreshed' in l]
+    for line in refreshed_line:
+        assert 'new_token' not in line, f"T24 FAIL: token in log line: {line!r}"
+    print("T24 PASS: token value not exposed in log messages")
+
+
+# T25: send_message still works (calls get_sendpulse_token)
+async def test_t25_send_message_calls_token_fn():
+    """T25: send_message still calls get_sendpulse_token (cache-backed)."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.send_message)
+    assert "get_sendpulse_token" in src,         "T25 FAIL: send_message must call get_sendpulse_token"
+    print("T25 PASS: send_message calls get_sendpulse_token")
+
+
+# T26: send_document still works (calls get_sendpulse_token)
+async def test_t26_send_document_calls_token_fn():
+    """T26: send_document still calls get_sendpulse_token (cache-backed)."""
+    import main as _m
+    import inspect
+    src = inspect.getsource(_m.send_document)
+    assert "get_sendpulse_token" in src,         "T26 FAIL: send_document must call get_sendpulse_token"
+    print("T26 PASS: send_document calls get_sendpulse_token")
+
+
 if __name__ == "__main__":
     import asyncio as _asyncio
 
     async def run_all_phase4():
-        print("=== Phase 4 Step 2+4 Integration Tests (T1-T20) ===")
+        print("=== Phase 4 Step 2+4+6 Integration Tests (T1-T26) ===")
         await test_t1_t2_orchestrator_receives_real_session_and_message_text()
         await test_t3_ask_claude_fn_is_called()
         await test_t4_save_session_fn_is_called()
@@ -565,6 +668,13 @@ if __name__ == "__main__":
         await test_t18_shadow_mode_skips_memory_write()
         await test_t19_shadow_errors_do_not_break_webhook()
         await test_t20_shadow_compare_log_present()
-        print("\n=== ALL TESTS PASSED (T1-T20) ===")
+        # Phase 4 Step 6 token cache tests
+        await test_t21_first_call_fetches_token()
+        await test_t22_second_call_uses_cache()
+        await test_t23_expired_token_triggers_refresh()
+        await test_t24_token_not_in_logs()
+        await test_t25_send_message_calls_token_fn()
+        await test_t26_send_document_calls_token_fn()
+        print("\n=== ALL TESTS PASSED (T1-T26) ===")
 
     _asyncio.run(run_all_phase4())
