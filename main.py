@@ -9,8 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
-from agents import process_message, on_payment_confirmed
-from ai_router import health_check as ai_health_check
+from agents import process_message, on_payment_confirmed, load_session, save_session
+from ai_router import health_check as ai_health_check, ask_claude
 
 logging.basicConfig(
     level=logging.INFO,
@@ -179,11 +179,24 @@ async def webhook(request: Request):
 
     log.info(f"[{contact_id}] -> {text[:100]}")
 
+    t_start_main = _time.monotonic()
     try:
         reply = process_message(contact_id, text)
     except Exception as e:
         log.error(f"Agent error: {e}")
         reply = "Something went wrong. Please write again in a minute."
+
+    # ── PHASE 4 STEP 4: Shadow observation (non-blocking, observe-only) ──────
+    if PIPELINE_SHADOW_MODE:
+        asyncio.create_task(
+            _shadow_observe(
+                contact_id=contact_id,
+                text=text,
+                old_reply=reply,
+                t_start=t_start_main,
+                raw_update=body,
+            )
+        )
 
     send_oferta = "[SEND_OFERTA]" in reply
     if send_oferta:
@@ -671,65 +684,148 @@ def _log_pipeline_metrics(contact_id: str, metrics: dict):
 # Shadow mode runner
 # Old pipeline sends real response; new pipeline runs in observe-only mode
 # ---------------------------------------------------------------------------
-async def _run_shadow_pipeline(contact_id: str, text: str, t_start: float):
-    """Run new pipeline in shadow mode: observe, log, do NOT send."""
+# ---------------------------------------------------------------------------
+# PHASE 4 STEP 4: Noop session saver for shadow mode (never writes production)
+# ---------------------------------------------------------------------------
+async def _noop_save_session(updated_session):
+    """Shadow mode: discard session update — do NOT write to production DB."""
+    return None
+
+
+# ---------------------------------------------------------------------------
+# PHASE 4 STEP 4: Real shadow observe — compares OrchestratorCore vs old flow
+# Fires as asyncio.create_task from /webhook — non-blocking, observe-only
+# CRITICAL: never sends message, never saves production session
+# ---------------------------------------------------------------------------
+async def _shadow_observe(
+    contact_id: str,
+    text: str,
+    old_reply: str,
+    t_start: float,
+    raw_update=None,
+):
+    """
+    Run OrchestratorCore.handle_message in observe-only mode alongside old flow.
+    - Loads real session (read-only copy for shadow)
+    - Calls handle_message with shadow_mode=True
+    - Compares route/intent/agent/escalation/reply_len vs old flow
+    - Logs [SHADOW_COMPARE] / [SHADOW_MISMATCH]
+    - Does NOT send any message to user
+    - Does NOT persist shadow session
+    - Does NOT write memory (shadow_mode=True disables it)
+    """
+    t0 = _time.monotonic()
     try:
-        from fast_path_resolver import fast_path_resolver, FastPathIntent
-        from stale_response_guard import stale_guard
-        from message_queue import message_queue
-        from debounce_manager import debounce_manager
-
-        # Fast path detection
-        fp_intent, fp_response = fast_path_resolver.resolve(text)
-        fast_path_hit = fp_intent.value != "none"
-
-        # Queue depth
-        contact_hash = hash(contact_id) % 1000000  # Stable numeric ID from string
-        queue_depth = message_queue.queue_size(contact_hash)
-
-        t_pipeline_start = _time.monotonic()
-        # Run old pipeline to get proposed response for comparison
+        # 1. Load real session (read-only copy for shadow)
         try:
-            proposed = process_message(contact_id, text)
-        except Exception as _pe:
-            proposed = f"[ERROR: {_pe}]"
-        orchestration_ms = int((_time.monotonic() - t_pipeline_start) * 1000)
-        total_ms = int((_time.monotonic() - t_start) * 1000)
+            shadow_session = await asyncio.to_thread(load_session, contact_id)
+        except Exception as _lse:
+            log.warning("[SHADOW_OBSERVE] load_session failed contact=%s: %s", contact_id, _lse)
+            shadow_session = {}
 
-        # Extract route/agent from session if available
-        session = sessions.get(contact_id, {})
-        route = session.get("current_route", "unknown")
-        agent = session.get("active_agent", "unknown")
-        stage = session.get("current_stage", "unknown")
+        # Make a safe copy so we never mutate production session
+        import copy
+        shadow_session = copy.deepcopy(shadow_session)
 
-        _log_pipeline_metrics(contact_id, {
-            "queue_depth": queue_depth,
-            "debounce_wait_ms": 0,  # Shadow: no debounce applied
-            "fast_path_hit": fast_path_hit,
-            "stale_discarded": 0,
-            "orchestration_ms": orchestration_ms,
-            "total_latency_ms": total_ms,
-            "timeout_used": False,
-            "model_tier": "standard",
-            "active_agent": agent,
-            "route": route,
-            "stage": stage,
-        })
+        # 2. Extract route/intent/agent from old session BEFORE shadow runs
+        old_route = shadow_session.get("current_route") or shadow_session.get("route", "unknown")
+        old_intent = shadow_session.get("current_intent", "unknown")
+        old_agent = shadow_session.get("agent_current") or shadow_session.get("active_agent", "unknown")
+        old_escalation = shadow_session.get("escalation_flag", False)
 
-        log.info("[SHADOW] contact=%s fast_path=%s fp_intent=%s proposed_len=%d orch_ms=%d",
-                 contact_id, fast_path_hit, fp_intent.value, len(proposed), orchestration_ms)
+        # 3. Stable numeric user_id for OrchestratorCore
+        contact_hash = abs(hash(contact_id)) % (2**31)
 
-        if fast_path_hit and fp_response:
-            log.info("[SHADOW] FAST_PATH_WOULD_RESPOND contact=%s intent=%s response=%.80r",
-                     contact_id, fp_intent.value, fp_response)
+        # 4. Async wrapper for ask_claude (sync → async)
+        async def _ask_claude_shadow(system_prompt, messages, **kwargs):
+            return await asyncio.to_thread(ask_claude, system_prompt, messages)
 
-        return proposed  # Return for old pipeline to send
+        # 5. Get or init pipeline (uses existing singleton)
+        pipeline = await asyncio.to_thread(_get_pipeline)
 
-    except Exception as e:
-        log.error("[SHADOW] Shadow pipeline error: %s", e)
-        log.error("[SHADOW] Traceback: %s", _traceback.format_exc())
-        # Fall through to old pipeline
-        return process_message(contact_id, text)
+        if pipeline is None or pipeline.orchestrator is None:
+            log.warning("[SHADOW_OBSERVE] OrchestratorCore not available, skipping contact=%s", contact_id)
+            return
+
+        orchestrator = pipeline.orchestrator
+
+        # 6. Call OrchestratorCore with shadow_mode=True
+        t_orch = _time.monotonic()
+        try:
+            orch_result = await orchestrator.handle_message(
+                user_id=contact_hash,
+                message_text=text,
+                session=shadow_session,
+                ask_claude_fn=_ask_claude_shadow,
+                save_session_fn=_noop_save_session,
+                shadow_mode=True,
+            )
+        except Exception as _oe:
+            log.error("[SHADOW_OBSERVE] OrchestratorCore error contact=%s: %s", contact_id, _oe)
+            log.error("[SHADOW_OBSERVE] Traceback: %s", _traceback.format_exc())
+            return
+        orch_ms = int((_time.monotonic() - t_orch) * 1000)
+
+        # 7. Extract shadow results
+        if hasattr(orch_result, "reply"):
+            shadow_reply = orch_result.reply or ""
+            shadow_route = getattr(orch_result, "route", "unknown")
+            shadow_intent = getattr(orch_result, "intent", "unknown")
+            shadow_agent = getattr(orch_result, "agent", "unknown")
+            shadow_escalation = getattr(orch_result, "escalate", False)
+        else:
+            shadow_reply = str(orch_result) if orch_result else ""
+            shadow_route = shadow_session.get("current_route", "unknown")
+            shadow_intent = shadow_session.get("current_intent", "unknown")
+            shadow_agent = shadow_session.get("active_agent", "unknown")
+            shadow_escalation = False
+
+        # 8. Compare
+        total_ms = int((_time.monotonic() - t0) * 1000)
+        route_match = (old_route == shadow_route)
+        intent_match = (old_intent == shadow_intent)
+        agent_match = (old_agent == shadow_agent)
+        escalation_match = (old_escalation == shadow_escalation)
+        full_match = route_match and intent_match and agent_match and escalation_match
+
+        # 9. Log comparison
+        log.info(
+            "[SHADOW_COMPARE] contact_id=%s "
+            "old_route=%s shadow_route=%s route_match=%s "
+            "old_intent=%s shadow_intent=%s intent_match=%s "
+            "old_agent=%s shadow_agent=%s agent_match=%s "
+            "escalation_match=%s "
+            "old_reply_len=%d shadow_reply_len=%d "
+            "latency_ms=%d orch_ms=%d error=false",
+            contact_id,
+            old_route, shadow_route, route_match,
+            old_intent, shadow_intent, intent_match,
+            old_agent, shadow_agent, agent_match,
+            escalation_match,
+            len(old_reply), len(shadow_reply),
+            total_ms, orch_ms,
+        )
+
+        if not full_match:
+            reasons = []
+            if not route_match:    reasons.append("route_mismatch")
+            if not intent_match:   reasons.append("intent_mismatch")
+            if not agent_match:    reasons.append("agent_mismatch")
+            if not escalation_match: reasons.append("escalation_mismatch")
+            log.warning(
+                "[SHADOW_MISMATCH] contact_id=%s reason=%s "
+                "old_route=%s shadow_route=%s "
+                "old_intent=%s shadow_intent=%s "
+                "old_agent=%s shadow_agent=%s",
+                contact_id, ",".join(reasons),
+                old_route, shadow_route,
+                old_intent, shadow_intent,
+                old_agent, shadow_agent,
+            )
+
+    except Exception as _ex:
+        log.error("[SHADOW_OBSERVE] Unexpected error contact=%s: %s", contact_id, _ex)
+        log.error("[SHADOW_OBSERVE] Traceback: %s", _traceback.format_exc())
 
 
 # ---------------------------------------------------------------------------
@@ -765,16 +861,22 @@ async def webhook_v2(request: Request):
     # BRANCH A: Shadow Mode (observe new pipeline, old sends)
     # ------------------------------------------------------------------
     if PIPELINE_SHADOW_MODE and not USE_NEW_MESSAGE_PIPELINE:
-        log.info("[SHADOW_MODE] Running shadow observation for contact=%s", contact_id)
+        log.info("[SHADOW_MODE] Running shadow observation via /webhook/v2 for contact=%s", contact_id)
         try:
-            reply = await _run_shadow_pipeline(contact_id, text, t_start)
+            reply = process_message(contact_id, text)
         except Exception as e:
-            log.error("[SHADOW_MODE] Error: %s", e)
-            try:
-                reply = process_message(contact_id, text)
-            except Exception as e2:
-                log.error("[SHADOW_MODE] Fallback also failed: %s", e2)
-                reply = "Something went wrong. Please write again in a minute."
+            log.error("[SHADOW_MODE] Old pipeline error: %s", e)
+            reply = "Something went wrong. Please write again in a minute."
+        # Fire shadow observe task (non-blocking, observe-only)
+        asyncio.create_task(
+            _shadow_observe(
+                contact_id=contact_id,
+                text=text,
+                old_reply=reply,
+                t_start=t_start,
+                raw_update=body,
+            )
+        )
 
         send_oferta = "[SEND_OFERTA]" in reply
         if send_oferta:
