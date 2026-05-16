@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# PHASE 3 â Central Orchestrator Architecture
+# PHASE 3 — Central Orchestrator Architecture
 # Module: orchestrator_core.py
 # Python Method Digital Rehabilitation Center
 #
@@ -9,22 +9,22 @@
 #          Single entry point: OrchestratorCore.handle_message()
 #
 # Execution pipeline (per message):
-#   Step 0  build_context_package()     â assemble full context snapshot
-#   Step 1  state_engine.analyze()      â detect intent + state + risk
-#   Step 2  route_resolver.resolve()    â recommend optimal route (observe only)
-#   Step 3  route_lock_manager.check()  â enforce active locks
-#   Step 4  interrupt_detector.scan()   â detect critical interrupts
-#   Step 5  priority_engine.rank()      â resolve interrupt/route priority
-#   Step 6  auto_router.apply()         â apply safe automatic route switches
-#   Step 7  agent_selector.select()     â select single active agent
-#   Step 8  emotional_overlay.detect()  â inject emotional intelligence layer
-#   Step 9  escalation_manager.check()  â decide AI vs human escalation
-#   Step 10 response_validator.pre()    â validate prompt before generation
-#   Step 11 ask_claude() / escalate     â generate AI response or escalate
-#   Step 12 response_validator.post()   â validate generated response
-#   Step 13 memory_writer.write()       â update long-term memory
-#   Step 14 orchestration_logger.log()  â persist orchestration event
-#   Step 15 save_session()              â persist session state
+#   Step 0  build_context_package()     — assemble full context snapshot
+#   Step 1  state_engine.analyze()      — detect intent + state + risk
+#   Step 2  route_resolver.resolve()    — recommend optimal route (observe only)
+#   Step 3  route_lock_manager.check()  — enforce active locks
+#   Step 4  interrupt_detector.scan()   — detect critical interrupts
+#   Step 5  priority_engine.rank()      — resolve interrupt/route priority
+#   Step 6  auto_router.apply()         — apply safe automatic route switches
+#   Step 7  agent_selector.select()     — select single active agent
+#   Step 8  emotional_overlay.detect()  — inject emotional intelligence layer
+#   Step 9  escalation_manager.check()  — decide AI vs human escalation
+#   Step 10 response_validator.pre()    — validate prompt before generation
+#   Step 11 ask_claude() / escalate     — generate AI response or escalate
+#   Step 12 response_validator.post()   — validate generated response
+#   Step 13 memory_writer.write()       — update long-term memory
+#   Step 14 orchestration_logger.log()  — persist orchestration event
+#   Step 15 save_session()              — persist session state
 #
 # Critical invariants (enforced by this module):
 #   - NEVER more than one active agent at the same time
@@ -133,7 +133,7 @@ class OrchestrationResult:
 
 
 # ---------------------------------------------------------------------------
-# OrchestratorCore â main class
+# OrchestratorCore — main class
 # ---------------------------------------------------------------------------
 class OrchestratorCore:
     """
@@ -141,12 +141,18 @@ class OrchestratorCore:
 
     Usage (in agents.py or main.py):
         orch = OrchestratorCore()
-        result = await orch.handle_message(user_id, message_text, session)
+        result = await orch.handle_message(
+            user_id=user_id,
+            message_text=message_text,
+            session=session,
+            ask_claude_fn=ask_claude_fn,   # required for AI responses
+            save_session_fn=save_session_fn,  # required for session persistence
+        )
         reply = result.reply
         session = result.session
 
     Thread safety: Each handle_message() call is independent.
-    State is NOT stored on the instance â it is passed in via session dict.
+    State is NOT stored on the instance — it is passed in via session dict.
     """
 
     def __init__(self):
@@ -230,7 +236,7 @@ class OrchestratorCore:
             log.debug("[ORCH S1] intent=%s state=%s risk=%.2f", intent, user_state, risk_score)
 
             # ---------------------------------------------------------------
-            # STEP 2: Route resolver (observation â does NOT switch route)
+            # STEP 2: Route resolver (observation — does NOT switch route)
             # ---------------------------------------------------------------
             route_result = resolve_route(intent, user_state, risk_score, session)
             proposed_route = route_result.get("proposed_route", session.get("route", "reception"))
@@ -331,7 +337,7 @@ class OrchestratorCore:
                 reply = await self.esc_mgr.handle_escalation(
                     esc_result, context_package, session
                 )
-                log.info("[ORCH S11] escalated: %s â reply: %s...", escalation_reason, reply[:60])
+                log.info("[ORCH S11] escalated: %s — reply: %s...", escalation_reason, reply[:60])
             else:
                 # Pre-validation of prompt
                 pre_valid = self.validator.validate_prompt(agent_system_prompt, session)
@@ -348,7 +354,7 @@ class OrchestratorCore:
                         )
                     except Exception as _ce:
                         log.error("[ORCH S11] ask_claude error: %s", _ce)
-                        reply = "ÐÐ·Ð²Ð¸Ð½Ð¸ÑÐµ, Ð¿ÑÐ¾Ð¸Ð·Ð¾ÑÐ»Ð° Ð²ÑÐµÐ¼ÐµÐ½Ð½Ð°Ñ Ð¾ÑÐ¸Ð±ÐºÐ°. ÐÐ¾Ð¿ÑÐ¾Ð±ÑÐ¹ÑÐµ ÐµÑÑ ÑÐ°Ð·."
+                        reply = "Извините, произошла временная ошибка. Попробуйте ещё раз."
                 else:
                     reply = "[ORCHESTRATOR] No AI runtime provided. Configure ask_claude_fn."
 
@@ -414,7 +420,7 @@ class OrchestratorCore:
 
         except Exception as _ex:
             log.error("[ORCH FATAL] Unhandled error in handle_message: %s", traceback.format_exc())
-            reply = reply or "ÐÐ·Ð²Ð¸Ð½Ð¸ÑÐµ, Ð¿ÑÐ¾Ð¸Ð·Ð¾ÑÐ»Ð° Ð¾ÑÐ¸Ð±ÐºÐ°. Ð¡Ð¿ÐµÑÐ¸Ð°Ð»Ð¸ÑÑ ÑÐ¶Ðµ Ð¿Ð¾Ð»ÑÑÐ¸Ð» ÑÐ²ÐµÐ´Ð¾Ð¼Ð»ÐµÐ½Ð¸Ðµ."
+            reply = reply or "Извините, произошла ошибка. Специалист уже получил уведомление."
             validation_passed = False
             validation_issues.append("fatal_error: " + str(_ex))
 
@@ -451,7 +457,7 @@ class OrchestratorCore:
 
 
 # ---------------------------------------------------------------------------
-# Singleton accessor (optional â for direct import in agents.py)
+# Singleton accessor (optional — for direct import in agents.py)
 # ---------------------------------------------------------------------------
 _ORCHESTRATOR: Optional[OrchestratorCore] = None
 
@@ -464,7 +470,7 @@ def get_orchestrator() -> OrchestratorCore:
 
 
 # =============================================================================
-# PHASE 3.1A â Message Queue Pipeline Integration
+# PHASE 3.1A — Message Queue Pipeline Integration
 # Wraps OrchestratorCore with:
 #   message_queue -> debounce -> batch -> orchestrator
 #   -> stale_guard -> send -> async background tasks
@@ -529,7 +535,7 @@ class MessagePipelineManager:
                        chat_id: int, raw_update: Optional[Dict] = None) -> None:
         """
         Entry point for every incoming Telegram message.
-        Returns immediately â processing happens in background.
+        Returns immediately — processing happens in background.
         """
         # Track sequence
         self._sequence[user_id] = self._sequence.get(user_id, 0) + 1
@@ -813,7 +819,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5: Proactive dispatcher â send approved recovery messages (background only)
+        # Task 5: Proactive dispatcher — send approved recovery messages (background only)
         async def dispatcher_task():
             try:
                 from proactive_message_dispatcher import get_dispatcher
@@ -833,7 +839,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5.5 â Adaptive Behaviour Engine (LOWEST priority â runs after policy, before dispatch)
+        # Task 5.5 — Adaptive Behaviour Engine (LOWEST priority — runs after policy, before dispatch)
         # Evaluates user behavioural profile and generates adaptation recommendations.
         # NEVER sends messages. Central Orchestrator remains final authority.
         async def behaviour_task():
@@ -877,7 +883,7 @@ class MessagePipelineManager:
             priority=TaskPriority.LOW
         )
 
-        # Task 5.6 â Clinical Continuity Intelligence (analytical layer, no outbound sends)
+        # Task 5.6 — Clinical Continuity Intelligence (analytical layer, no outbound sends)
         # Runs after behaviour_eval and before scanner/dispatcher final packaging.
         # This task NEVER sends messages directly.
         # Central Orchestrator remains final authority.
@@ -886,7 +892,7 @@ class MessagePipelineManager:
                 from clinical_continuity_engine import get_continuity_engine
                 engine = get_continuity_engine()
                 if not engine:
-                    log.debug("[CONTINUITY] Engine not initialised â skipping continuity_task")
+                    log.debug("[CONTINUITY] Engine not initialised — skipping continuity_task")
                     return
                 result = await engine.evaluate_continuity(
                     user_id=user_id,
@@ -908,7 +914,7 @@ class MessagePipelineManager:
         )
 
 
-                # Task 5.7 â Trajectory Intelligence (LOW priority, enriches dispatcher context)
+                # Task 5.7 — Trajectory Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER continuity_task, BEFORE dispatcher_task
         # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
         async def trajectory_task():
@@ -952,7 +958,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.8 â Rehabilitation State Machine (LOW priority, enriches dispatcher context)
+        # Task 5.8 — Rehabilitation State Machine (LOW priority, enriches dispatcher context)
         # Runs AFTER trajectory_task, BEFORE dispatcher_task
         # IMMUTABLE: must never bypass dispatcher, silence, escalation, or recovery governance
         async def state_machine_task():
@@ -999,7 +1005,7 @@ class MessagePipelineManager:
         )
 
 
-# Task 5.9 â Multi-Stage Orchestration Engine (LOW priority, enriches dispatcher context)
+# Task 5.9 — Multi-Stage Orchestration Engine (LOW priority, enriches dispatcher context)
         # Runs AFTER state_machine_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override state machine, or call dispatcher
         async def orchestration_task():
@@ -1046,7 +1052,7 @@ class MessagePipelineManager:
         )
 
 
-# Task 5.10 â Dynamic Pacing Intelligence (LOW priority, enriches dispatcher context)
+# Task 5.10 — Dynamic Pacing Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER orchestration_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, force pacing, or create urgency
         async def pacing_task():
@@ -1095,7 +1101,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.11 â Expert Load Balancing Intelligence (LOW priority, enriches dispatcher context)
+        # Task 5.11 — Expert Load Balancing Intelligence (LOW priority, enriches dispatcher context)
         # Runs AFTER pacing_task, BEFORE dispatcher_task
         # IMMUTABLE: must never assign medical responsibility, force handoffs, send messages,
         #            contact experts directly, bypass governance, override human decisions
@@ -1104,7 +1110,7 @@ class MessagePipelineManager:
                 from expert_load_balancing_engine import get_load_balancing_engine
                 eng = get_load_balancing_engine()
                 if eng:
-                    # Respect governance hierarchy â never override higher layers
+                    # Respect governance hierarchy — never override higher layers
                     human_esc = context.get("human_escalation_active", False)
                     silence = context.get("silence_respected", False)
                     recovery = context.get("recovery_policy_active", False)
@@ -1148,7 +1154,7 @@ class MessagePipelineManager:
             coro_factory=load_balancing_task,
         )
 
-        # Task 5.12 â Central Cognitive Orchestrator (LOW priority, synthesizes all engine outputs)
+        # Task 5.12 — Central Cognitive Orchestrator (LOW priority, synthesizes all engine outputs)
         # Runs AFTER load_balancing_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, make medical decisions,
         #            create urgency, force progression, or destabilize system coherence
@@ -1157,7 +1163,7 @@ class MessagePipelineManager:
                 from central_cognitive_orchestrator import get_cognitive_orchestrator
                 orch = get_cognitive_orchestrator()
                 if orch:
-                    # Respect governance hierarchy â never override higher layers
+                    # Respect governance hierarchy — never override higher layers
                     human_esc = context.get("human_escalation_active", False)
                     silence = context.get("silence_respected", False)
                     if human_esc or silence:
@@ -1199,7 +1205,7 @@ class MessagePipelineManager:
         )
 
 
-        # Task 5.13 â Longitudinal Rehabilitation Modeling
+        # Task 5.13 — Longitudinal Rehabilitation Modeling
         async def longitudinal_modeling_task():
             try:
                 from longitudinal_rehabilitation_modeling import get_longitudinal_modeling_engine
@@ -1249,7 +1255,7 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=longitudinal_modeling_task,
         )
-        # Task 5.14 â Adaptive Rehabilitation Strategy (after longitudinal, before dispatcher)
+        # Task 5.14 — Adaptive Rehabilitation Strategy (after longitudinal, before dispatcher)
         # Runs AFTER longitudinal_modeling_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, make medical recommendations,
         #             recommend treatment, or create urgency
@@ -1274,7 +1280,7 @@ class MessagePipelineManager:
             user_id=user_id,
             coro_factory=adaptive_strategy_task,
         )
-                                                       # Task 5.15 â Rehabilitation Route Simulation (Phase 3.16 â read-only observer)
+                                                       # Task 5.15 — Rehabilitation Route Simulation (Phase 3.16 — read-only observer)
         # IMMUTABLE: must never predict outcomes, create fear, or override governance
         async def route_simulation_task():
             try:
@@ -1297,7 +1303,7 @@ class MessagePipelineManager:
             coro_factory=route_simulation_task,
         )
 
-        # Task 5.16 â Self-Stabilizing Governance Engine (LOW priority, read-only observer)
+        # Task 5.16 — Self-Stabilizing Governance Engine (LOW priority, read-only observer)
         # Runs AFTER route_simulation_task, BEFORE dispatcher_task
         # IMMUTABLE: must never send messages, override governance, change route states,
         #            make medical conclusions, bypass dispatcher, or create urgency
@@ -1326,7 +1332,7 @@ class MessagePipelineManager:
 
 
 
-# Task 6 â Silent User Scanner (LOW priority, runs scan cycle)
+# Task 6 — Silent User Scanner (LOW priority, runs scan cycle)
         async def scanner_task():
             try:
                 from silent_user_scanner import get_scanner
