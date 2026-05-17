@@ -748,6 +748,7 @@ import statistics as _statistics
 _SHADOW_ANALYTICS_MAXLEN = 10_000
 _shadow_analytics_buf = None  # init in _shadow_analytics_init
 _shadow_analytics_lock = None  # asyncio.Lock — init lazily
+_last_webhook_ts = 0.0  # set by /webhook handlers; read by _traffic_heartbeat (fixes startup NameError)
 
 # High-risk routes/intents that require extra alerting
 _SHADOW_HIGH_RISK_ROUTES = frozenset({
