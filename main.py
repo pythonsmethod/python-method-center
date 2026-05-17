@@ -749,6 +749,7 @@ _SHADOW_ANALYTICS_MAXLEN = 10_000
 _shadow_analytics_buf = None  # init in _shadow_analytics_init
 _shadow_analytics_lock = None  # asyncio.Lock — init lazily
 _last_webhook_ts = 0.0  # set by /webhook handlers; read by _traffic_heartbeat (fixes startup NameError)
+_traffic_was_silent = False  # tracks last heartbeat state to log only on transitions; read+written by _traffic_heartbeat task
 
 # High-risk routes/intents that require extra alerting
 _SHADOW_HIGH_RISK_ROUTES = frozenset({
@@ -1478,7 +1479,7 @@ async def _traffic_heartbeat():
             if not _traffic_was_silent: _traffic_was_silent=True; log.warning("[TRAFFIC_WARN] No webhook in %s min", round(e/60,1) if e else "never")
         elif _traffic_was_silent: _traffic_was_silent=False; log.info("[TRAFFIC_OK] Webhook resumed")
 
-
+@app.on_event("startup")
 async def on_startup():
     log.info("[STARTUP] Phase 3.19 InstitutionalMemoryEngine — background-only, fail-safe, neutral_result on all exceptions")
     log.info("[STARTUP] USE_NEW_MESSAGE_PIPELINE=%s PIPELINE_SHADOW_MODE=%s",
