@@ -1466,7 +1466,7 @@ async def risk_governance():
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
-@app.on_event("startup")
+#@app.on_event("startup")
 async def _traffic_heartbeat():
     """Traffic heartbeat."""
     global _last_webhook_ts, _traffic_was_silent
