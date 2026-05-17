@@ -1108,32 +1108,28 @@ async def _shadow_observe(
 
         # 7. Build OrchestratorCore and call — BASELINE (without continuity)
         from orchestrator_core import OrchestratorCore
-        orchestrator = OrchestratorCore(
+        orchestrator = OrchestratorCore()
+        orch_result = await orchestrator.handle_message(
             user_id=contact_hash,
+            message_text=text,
             session=shadow_session,
             ask_claude_fn=_ask_claude_shadow,
             save_session_fn=_noop_save_session,
-            pipeline=pipeline,
-        )
-        orch_result = await orchestrator.handle_message(
-            message=text,
             shadow_mode=True,
-        )
+    )
 
         # 7b. Phase 4 Step 9: Run enriched shadow (WITH continuity) and compare
         if _continuity_snap is not None:
             try:
                 import copy as _copy_mod
                 _enriched_session = _copy_mod.deepcopy(shadow_session)
-                _orch_enriched = OrchestratorCore(
+                _orch_enriched = OrchestratorCore()
+                _enr_result = await _orch_enriched.handle_message(
                     user_id=contact_hash,
+                    message_text=text,
                     session=_enriched_session,
                     ask_claude_fn=_ask_claude_shadow,
                     save_session_fn=_noop_save_session,
-                    pipeline=pipeline,
-                )
-                _enr_result = await _orch_enriched.handle_message(
-                    message=text,
                     shadow_mode=True,
                     continuity_snapshot=_continuity_snap,
                 )
