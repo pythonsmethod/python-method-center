@@ -2,12 +2,12 @@
 # =============================================================================
 # PHASE 3 — Central Orchestrator Architecture
 # Module: orchestrator_core.py
-# Python Method Digital Rehabilitation Center
+# Python Method Digital Rehabilitation Centerh
 #
 # Purpose: Master orchestration controller for every user message.
 #          Coordinates all 12 subsystems in strict execution order.
 #          Single entry point: OrchestratorCore.handle_message()
-#h
+#hh
 # Execution pipeline (per message):
 #   Step 0  build_context_package()     — assemble full context snapshot
 #   Step 1  state_engine.analyze()      — detect intent + state + risk
@@ -323,7 +323,15 @@ class OrchestratorCore:
             # STEP 6: Auto-router (guarded route switching)
             # ---------------------------------------------------------------
             prev_route = session.get("route", "reception")
-            apply_auto_route(session, intent, user_state, risk_score)
+            apply_auto_route(
+                                    contact_id       = str(user_id),
+                                    session          = session,
+                                    proposed_route   = proposed_route,
+                                    route_confidence = route_confidence,
+                                    route_reason     = route_result.get("route_reason", ""),
+                                    intent           = intent,
+                                    state            = user_state,
+            )
             current_route = session.get("route", "reception")
             if current_route != prev_route:
                 route_switched = True
