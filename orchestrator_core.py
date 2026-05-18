@@ -7,7 +7,7 @@
 # Purpose: Master orchestration controller for every user message.
 #          Coordinates all 12 subsystems in strict execution order.
 #          Single entry point: OrchestratorCore.handle_message()
-#
+#h
 # Execution pipeline (per message):
 #   Step 0  build_context_package()     — assemble full context snapshot
 #   Step 1  state_engine.analyze()      — detect intent + state + risk
@@ -265,7 +265,7 @@ class OrchestratorCore:
             # ---------------------------------------------------------------
             # STEP 1: State analysis (intent + state + risk)
             # ---------------------------------------------------------------
-            state_result = state_analyze(message_text, session)
+            state_result = state_analyze(str(user_id), message_text, session, context_package)
             intent = state_result.get("intent", "question")
             user_state = state_result.get("state", "neutral")
             risk_score = float(state_result.get("risk_score", 0.0))
