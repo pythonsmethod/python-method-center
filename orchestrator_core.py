@@ -278,7 +278,7 @@ class OrchestratorCore:
             # ---------------------------------------------------------------
             # STEP 2: Route resolver (observation — does NOT switch route)
             # ---------------------------------------------------------------
-            route_result = resolve_route(intent, user_state, risk_score, session)
+            route_result = resolve_route(intent, user_state, context_package, session)
             proposed_route = route_result.get("proposed_route", session.get("route", "reception"))
             proposed_agent = route_result.get("proposed_agent", "Lucky")
             route_confidence = float(route_result.get("route_confidence", 0.0))
