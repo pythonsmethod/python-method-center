@@ -272,6 +272,19 @@ async def webhook(request: Request):
             caption="Dogovor-oferta Python Method"
         )
 
+    _flow_sess = sessions.get(contact_id, {})
+    _flow_latency = int((_time.monotonic() - t_start_main) * 1000)
+    log.info(
+        "[FLOW_METRICS] user=%s intent=%s state=%s route=%s confidence=%.2f latency_ms=%d shadow_match=%s escalated=%s",
+        contact_id,
+        _flow_sess.get("current_intent", "unknown"),
+        _flow_sess.get("current_state", "unknown"),
+        _flow_sess.get("proposed_route") or _flow_sess.get("route", "unknown"),
+        float(_flow_sess.get("route_confidence") or 0.0),
+        _flow_latency,
+        str(_flow_sess.get("shadow_match", False)),
+        str(_flow_sess.get("route", "unknown") == "escalation"),
+    )
     return JSONResponse({"status": "ok" if sent else "send_failed"})
 
 
