@@ -346,6 +346,16 @@ async def health():
         "ai_providers": ai_status,
         "claude_available": ai_status["claude"]["available"],
         "gpt_available": ai_status["gpt"]["available"],
+        "deploy_uptime_seconds": int(_rt_time.monotonic() - _RT_DEPLOY_START),
+        "bg_tasks_created": _RT_BG_TASKS_CREATED,
+        "total_webhooks_processed": _RT_WEBHOOKS,
+        "total_orch_cycles": _RT_ORCH_CYCLES,
+        "total_shadow_cycles": _RT_SHADOW_CYCLES,
+        "total_orch_failures": _RT_ORCH_FAILURES,
+        "total_shadow_mismatches": _RT_SHADOW_MISMATCHES,
+        "orchestrator_active": True,
+        "shadow_mode": PIPELINE_SHADOW_MODE,
+        "pipeline_mode": USE_NEW_MESSAGE_PIPELINE,
     }
 
 
@@ -1489,6 +1499,22 @@ async def _traffic_heartbeat():
             if not _traffic_was_silent: _traffic_was_silent=True; log.warning("[TRAFFIC_WARN] No webhook in %s min", round(e/60,1) if e else "never")
         elif _traffic_was_silent: _traffic_was_silent=False; log.info("[TRAFFIC_OK] Webhook resumed")
 
+async def _runtime_metrics_loop():
+    """Phase 4 Obs Step 1B: emit [RUNTIME_METRICS] log every 15 min."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            uptime = int(_rt_time.monotonic() - _RT_DEPLOY_START)
+            log.info(
+                "[RUNTIME_METRICS] webhooks=%d orch=%d shadow=%d failures=%d mismatches=%d bg_tasks=%d uptime=%ds",
+                _RT_WEBHOOKS, _RT_ORCH_CYCLES, _RT_SHADOW_CYCLES,
+                _RT_ORCH_FAILURES, _RT_SHADOW_MISMATCHES, _RT_BG_TASKS_CREATED, uptime
+            )
+        except Exception as _rme:
+            log.debug("[RUNTIME_METRICS] loop error: %s", _rme)
+        await asyncio.sleep(900)
+
+
 @app.on_event("startup")
 async def on_startup():
     log.info("[STARTUP] Phase 3.19 InstitutionalMemoryEngine — background-only, fail-safe, neutral_result on all exceptions")
@@ -1497,6 +1523,7 @@ async def on_startup():
     # Phase 4 Step 7: Initialize shadow analytics storage
     await _shadow_analytics_init()
     asyncio.create_task(_traffic_heartbeat())
+    asyncio.create_task(_runtime_metrics_loop())
     log.info("[STARTUP] Traffic heartbeat started")
     if USE_NEW_MESSAGE_PIPELINE or PIPELINE_SHADOW_MODE:
         log.info("[STARTUP] Starting pipeline workers...")
