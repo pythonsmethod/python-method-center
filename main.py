@@ -35,6 +35,18 @@ if STRIPE_SECRET_KEY:
 
 sessions = {}
 
+# ============================================================
+# PHASE 4 OBS STEP 1 -- Runtime Counters (additive only)
+# ============================================================
+import time as _rt_time
+_RT_DEPLOY_START: float = _rt_time.monotonic()
+_RT_WEBHOOKS: int = 0
+_RT_ORCH_CYCLES: int = 0
+_RT_SHADOW_CYCLES: int = 0
+_RT_ORCH_FAILURES: int = 0
+_RT_SHADOW_MISMATCHES: int = 0
+_RT_BG_TASKS_CREATED: int = 0
+
 
 # ============================================================
 # SENDPULSE
@@ -215,7 +227,9 @@ async def webhook(request: Request):
         log.error(f"Bad JSON: {e}")
         return JSONResponse({"status": "bad_json"})
 
-    log.info(f"Webhook received: {str(body)[:300]}")
+global _RT_WEBHOOKS
+            _RT_WEBHOOKS += 1
+        log.info(f"Webhook received: {str(body)[:300]}")
     contact_id, text = extract_event(body)
 
     if not contact_id or not text:
