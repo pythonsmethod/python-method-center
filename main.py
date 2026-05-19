@@ -228,7 +228,7 @@ async def webhook(request: Request):
         return JSONResponse({"status": "bad_json"})
 
 global _RT_WEBHOOKS
-            _RT_WEBHOOKS += 1
+    _RT_WEBHOOKS += 1
         log.info(f"Webhook received: {str(body)[:300]}")
     contact_id, text = extract_event(body)
 
