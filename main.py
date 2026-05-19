@@ -227,9 +227,9 @@ async def webhook(request: Request):
         log.error(f"Bad JSON: {e}")
         return JSONResponse({"status": "bad_json"})
 
-global _RT_WEBHOOKS
+    global _RT_WEBHOOKS
     _RT_WEBHOOKS += 1
-        log.info(f"Webhook received: {str(body)[:300]}")
+    log.info(f"Webhook received: {str(body)[:300]}")
     contact_id, text = extract_event(body)
 
     if not contact_id or not text:
