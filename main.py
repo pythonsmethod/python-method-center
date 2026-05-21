@@ -35,6 +35,11 @@ if STRIPE_SECRET_KEY:
 
 sessions = {}
 
+# Phase 5/Step 4: In-memory dedup guard — prevents duplicate Telegram delivery processing
+# Key: (contact_id, text_first50), Value: monotonic timestamp. Evict entries older than 15s.
+_SEEN_MSG_KEYS: dict = {}  # { (contact_id, text[:50]): float (monotonic) }
+_SEEN_MSG_MAXAGE: float = 15.0   # seconds — Telegram retry window
+
 # ============================================================
 # PHASE 4 OBS STEP 1 -- Runtime Counters (additive only)
 # ============================================================
@@ -46,6 +51,7 @@ _RT_SHADOW_CYCLES: int = 0
 _RT_ORCH_FAILURES: int = 0
 _RT_SHADOW_MISMATCHES: int = 0
 _RT_BG_TASKS_CREATED: int = 0
+_RT_DEDUP_DROPS: int = 0  # Phase 5/Step 4: duplicate webhook drop counter
 
 
 # ============================================================
@@ -238,12 +244,28 @@ async def webhook(request: Request):
 
     log.info(f"[{contact_id}] -> {text[:100]}")
 
+    # Phase 5/Step 4: Dedup guard — reject duplicate (contact_id, text) within 15s window
+    global _RT_DEDUP_DROPS
+    _dedup_key = (str(contact_id), text[:50])
+    _now_mono = _time.monotonic()
+    # Evict stale entries (older than _SEEN_MSG_MAXAGE seconds)
+    _stale_keys = [k for k, ts in _SEEN_MSG_KEYS.items() if _now_mono - ts > _SEEN_MSG_MAXAGE]
+    for _sk in _stale_keys:
+        del _SEEN_MSG_KEYS[_sk]
+    if _dedup_key in _SEEN_MSG_KEYS:
+        _RT_DEDUP_DROPS += 1
+        log.warning("[DEDUP] Dropped duplicate delivery: user=%s text=%.40r age_s=%.1f",
+                    contact_id, text, _now_mono - _SEEN_MSG_KEYS[_dedup_key])
+        return JSONResponse({"status": "duplicate_ignored"})
+    _SEEN_MSG_KEYS[_dedup_key] = _now_mono
+
     t_start_main = _time.monotonic()
     try:
         reply = process_message(contact_id, text)
     except Exception as e:
         log.error(f"Agent error: {e}")
         reply = "Something went wrong. Please write again in a minute."
+    _t_provider_ms = int((_time.monotonic() - t_start_main) * 1000)
 
     # ── PHASE 4 STEP 4: Shadow observation (non-blocking, observe-only) ──────
     if PIPELINE_SHADOW_MODE:
@@ -274,14 +296,17 @@ async def webhook(request: Request):
 
     _flow_sess = sessions.get(contact_id, {})
     _flow_latency = int((_time.monotonic() - t_start_main) * 1000)
+    # Phase 5/Step 4: extended timing metrics (provider_ms = time spent in process_message)
     log.info(
-        "[FLOW_METRICS] user=%s intent=%s state=%s route=%s confidence=%.2f latency_ms=%d shadow_match=%s escalated=%s",
+        "[FLOW_METRICS] user=%s intent=%s state=%s route=%s confidence=%.2f latency_ms=%d provider_ms=%d dedup_drops=%d shadow_match=%s escalated=%s",
         contact_id,
         _flow_sess.get("current_intent", "unknown"),
         _flow_sess.get("current_state", "unknown"),
         _flow_sess.get("proposed_route") or _flow_sess.get("route", "unknown"),
         float(_flow_sess.get("route_confidence") or 0.0),
         _flow_latency,
+        _t_provider_ms,
+        _RT_DEDUP_DROPS,
         str(_flow_sess.get("shadow_match", False)),
         str(_flow_sess.get("route", "unknown") == "escalation"),
     )
