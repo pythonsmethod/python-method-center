@@ -142,7 +142,8 @@ sessions = {}  # RAM cache
 
 
 def _get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    # Phase 5/Step 4: connect_timeout=5 prevents blocking on slow DB connections
+    return psycopg2.connect(DATABASE_URL, sslmode='require', connect_timeout=5)
 
 
 def _init_db():
