@@ -22,7 +22,8 @@ logging.basicConfig(
 _anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
 _openai_key    = os.environ.get("OPENAI_API_KEY")
 
-claude_client = Anthropic(api_key=_anthropic_key) if _anthropic_key else None
+# Phase 5/Step 4: timeout=30.0 prevents indefinite blocking on slow Anthropic API calls
+claude_client = Anthropic(api_key=_anthropic_key, timeout=30.0) if _anthropic_key else None
 gpt_client    = OpenAI(api_key=_openai_key)       if _openai_key    else None
 
 CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
