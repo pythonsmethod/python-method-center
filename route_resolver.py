@@ -93,6 +93,39 @@ def _rule_onboarding(intent, state, ctx, session):
     return paid_context and paid_signal and intent != 'waiting'
 
 
+
+# ---------------------------------------------------------------------------
+# Phase 5/Step 5: New intent rules — greeting, payment_question, continuity_return
+# ---------------------------------------------------------------------------
+
+def _rule_greeting(intent, state, ctx, session):
+    # Greeting: explicit match to give a real confidence score.
+    # Routes to reception; auto_router won't switch away from established routes.
+    return intent == 'greeting'
+
+def _rule_payment_question(intent, state, ctx, session):
+    # Payment question: route to payment_route only when user is not yet paid
+    # and no active post-payment route is in progress.
+    if intent != 'payment_question':
+        return False
+    ps = ctx.get('payment_status', 'new')
+    if ps == 'paid':
+        return False
+    current_route = session.get('route', 'reception')
+    if current_route in ('onboarding_route', 'analysis_route', 'support_route'):
+        return False
+    return True
+
+def _rule_continuity_return(intent, state, ctx, session):
+    # Continuity return: restore care_route when user signals return and a valid
+    # prior care_route is stored in session.
+    if intent != 'continuity_return':
+        return False
+    care_route = session.get('care_route')
+    if not care_route or care_route == 'reception':
+        return False
+    return True
+
 _RULES = [
     # (priority, route_name,        agent_key,        condition_fn,           reason)
     # Priority 1: escalation is always highest
@@ -115,6 +148,10 @@ _RULES = [
     (9,  'faq_route',        'faq_route',        _rule_doubt_confused,'User has doubts/confusion'),
     # Priority 10: new user with question
     (10, 'reception',        'reception',        _rule_new_question,  'New user asking questions'),
+    # Phase 5/Step 5: new intent rules (priorities 11-13, after all existing rules)
+    (11, 'reception',        'reception',        _rule_greeting,         'Greeting — route to reception'),
+    (12, 'payment_route',    'payment_route',    _rule_payment_question, 'Payment question — route to payment'),
+    (13, '__care_route__',   '__care_route__',   _rule_continuity_return,'Continuity return — restore care_route'),
 ]
 
 # ---------------------------------------------------------------------------
@@ -191,6 +228,10 @@ def resolve_route(
         matched_route  = current_route
         matched_reason = 'No rule matched — keeping current route: ' + current_route
         matched_prio   = 99
+    # Phase 5/Step 5: resolve __care_route__ sentinel to actual care_route from session
+    if matched_route == '__care_route__':
+        matched_route = session.get('care_route') or session.get('route', 'reception')
+        matched_reason = 'Continuity return — restored to care_route: ' + matched_route
 
     proposed_agent     = ROUTE_AGENTS.get(matched_route, matched_route)
     route_confidence   = _calc_confidence(intent, state, context, matched_prio)
