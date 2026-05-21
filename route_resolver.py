@@ -126,6 +126,33 @@ def _rule_continuity_return(intent, state, ctx, session):
         return False
     return True
 
+
+# Phase 5/Step 6: Patient State Check-in rule functions
+def _rule_patient_decline(intent, state, ctx, session):
+    """Patient reports worsening — fire always when intent detected."""
+    return intent == 'patient_reports_decline'
+
+
+def _rule_patient_life_event(intent, state, ctx, session):
+    """Patient reports a life event."""
+    return intent == 'patient_reports_life_event'
+
+
+def _rule_patient_emotional(intent, state, ctx, session):
+    """Patient reports emotional shift."""
+    return intent == 'patient_reports_emotional_shift'
+
+
+def _rule_patient_progress(intent, state, ctx, session):
+    """Patient reports progress or improvement."""
+    return intent == 'patient_reports_progress'
+
+
+def _rule_scheduled_checkin(intent, state, ctx, session):
+    """Scheduled or AI-triggered state check."""
+    return intent == 'scheduled_state_check'
+
+
 _RULES = [
     # (priority, route_name,        agent_key,        condition_fn,           reason)
     # Priority 1: escalation is always highest
@@ -152,6 +179,13 @@ _RULES = [
     (11, 'reception',        'reception',        _rule_greeting,         'Greeting — route to reception'),
     (12, 'payment_route',    'payment_route',    _rule_payment_question, 'Payment question — route to payment'),
     (13, '__care_route__',   '__care_route__',   _rule_continuity_return,'Continuity return — restore care_route'),
+    # Phase 5/Step 6: Patient State Check-in rules (priorities 14-18)
+    # These preserve existing route (no route change) — just flag the mode
+    (14, '__current_route__', '__current_route__', _rule_patient_decline,       'Patient reports decline — escalate to Karen'),
+    (15, '__current_route__', '__current_route__', _rule_patient_life_event,    'Patient reports life event — positive outcome'),
+    (16, '__current_route__', '__current_route__', _rule_patient_emotional,     'Patient reports emotional shift'),
+    (17, '__current_route__', '__current_route__', _rule_patient_progress,      'Patient reports progress'),
+    (18, '__current_route__', '__current_route__', _rule_scheduled_checkin,     'Scheduled state check'),
 ]
 
 # ---------------------------------------------------------------------------
@@ -232,6 +266,10 @@ def resolve_route(
     if matched_route == '__care_route__':
         matched_route = session.get('care_route') or session.get('route', 'reception')
         matched_reason = 'Continuity return — restored to care_route: ' + matched_route
+    # Phase 5/Step 6: resolve __current_route__ sentinel — preserve existing route (no route change)
+    if matched_route == '__current_route__':
+        matched_route = session.get('route', 'reception')
+        matched_reason = 'Check-in mode — preserving current route: ' + matched_route
 
     proposed_agent     = ROUTE_AGENTS.get(matched_route, matched_route)
     route_confidence   = _calc_confidence(intent, state, context, matched_prio)
