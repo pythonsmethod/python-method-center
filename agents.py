@@ -12,6 +12,7 @@ from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
 from route_resolver import resolve_route
 from checkin_module import detect_checkin_intent, update_checkin_fields, get_checkin_response_template, build_checkin_prompt_prefix
+from testimonials_module import detect_testimonial_worthy, save_testimonial, CONSENT_PROMPT
 from auto_router import apply_auto_route
 from emotional_overlay import (
     detect_emotional_overlay,
@@ -201,6 +202,31 @@ def _init_db():
         
         conn.commit()
         cur.close()
+        # Phase 5/Step 7: Testimonials archive table
+        try:
+            _tc = conn.cursor()
+            _tc.execute(
+                'CREATE TABLE IF NOT EXISTS patient_testimonials ('
+                '    id SERIAL PRIMARY KEY,'
+                '    contact_id TEXT NOT NULL,'
+                '    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),'
+                '    source_message TEXT NOT NULL,'
+                "    cleaned_summary TEXT NOT NULL DEFAULT '',"
+                "    category TEXT NOT NULL DEFAULT 'life_event',"
+                "    emotional_tone TEXT NOT NULL DEFAULT 'positive',"
+                '    life_event JSONB,'
+                "    result_type TEXT NOT NULL DEFAULT 'patient_reports_life_event',"
+                '    is_social_ready BOOLEAN NOT NULL DEFAULT FALSE,'
+                "    consent_status TEXT NOT NULL DEFAULT 'unknown',"
+                '    anonymized_version TEXT,'
+                '    needs_anna_review BOOLEAN NOT NULL DEFAULT TRUE'
+                ')'
+            )
+            conn.commit()
+            _tc.close()
+            print('[DB] patient_testimonials ready')
+        except Exception as _te:
+            print(f'[DB ERROR] patient_testimonials: {_te}')
         conn.close()
         print('[DB] pm_sessions ready')
     except Exception as e:
@@ -715,6 +741,35 @@ def process_message(contact_id, user_message):
         session['checkin_intent'] = None
     # ─────────────────────────────────────────────────────────────────────
 
+    # ── Phase 5/Step 7: Testimonials / Life Outcomes Archive ─────────────
+    try:
+        _is_testimonial = detect_testimonial_worthy(
+            user_message          = user_message,
+            checkin_intent        = session.get('checkin_intent'),
+            positive_life_outcome = session.get('positive_life_outcome', False),
+        )
+        if _is_testimonial:
+            _tm_result = save_testimonial(
+                contact_id    = contact_id,
+                user_message  = user_message,
+                session       = session,
+                checkin_intent= session.get('checkin_intent'),
+                db_conn_fn    = _get_conn,
+            )
+            if _tm_result:
+                session['_testimonial_just_saved'] = True
+                session['_testimonial_category']   = _tm_result.get('category', '')
+                # Add consent prompt to checkin prefix if not already set
+                if not session.get('_consent_asked'):
+                    session['_consent_ask_pending'] = True
+        else:
+            session['_testimonial_just_saved'] = False
+    except Exception as _tm_err:
+        import logging as _tm_log
+        _tm_log.getLogger('testimonials_module').warning('[TESTIMONIAL] error: %s', _tm_err)
+        session['_testimonial_just_saved'] = False
+    # ─────────────────────────────────────────────────────────────────────
+
     # ── Auto-Router v4.0 (Soft Phase 1) ──────────────────────────────────
     try:
         ar = apply_auto_route(
@@ -815,6 +870,20 @@ def process_message(contact_id, user_message):
             )
             if _ci_prefix:
                 prompt = _ci_prefix + '\n\n' + prompt
+    except Exception:
+        pass
+
+    # Phase 5/Step 7: prepend consent prompt when testimonial just saved
+    try:
+        if session.get('_consent_ask_pending') and not session.get('_consent_asked'):
+            prompt = CONSENT_PROMPT + '\n\n' + prompt
+            session['_consent_asked'] = True
+            session['_consent_ask_pending'] = False
+            import logging as _tm_ci_log
+            _tm_ci_log.getLogger('testimonials_module').info(
+                '[TESTIMONIAL CONSENT PROMPT] contact=%s | category=%s',
+                contact_id, session.get('_testimonial_category', '?')
+            )
     except Exception:
         pass
 
