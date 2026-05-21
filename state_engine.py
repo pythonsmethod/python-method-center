@@ -147,6 +147,38 @@ _INTENT_PATTERNS: dict[str, list[str]] = {
         'вернулась к вам', 'вернулся к вам', 'снова пишу', 'пишу снова',
         'продолжаем', 'мы продолжаем', 'где остановились', 'на чём остановились',
     ],
+    # Phase 5/Step 6: Patient State Check-in intents
+    'patient_reports_progress': [
+        'стало лучше', 'чувствую себя лучше', 'улучшение', 'улучшилось',
+        'прогресс', 'вижу результат', 'вижу результаты', 'есть результат',
+        'замечаю изменения', 'есть изменения', 'двигаюсь вперёд',
+        'намного лучше', 'заметно лучше', 'гораздо лучше',
+    ],
+    'patient_reports_life_event': [
+        'поехал', 'поехала', 'полетел', 'полетела', 'съездил', 'съездила',
+        'посетил', 'посетила', 'встретил', 'встретила', 'встретились',
+        'провёл время', 'провела время',
+        'смог поехать', 'смогла поехать', 'смог пойти', 'смогла пойти',
+        'благодаря методу', 'благодаря программе', 'если бы не метод',
+        'без вас не смог', 'без вас не смогла',
+    ],
+    'patient_reports_emotional_shift': [
+        'счастлив', 'счастлива', 'радость', 'радуюсь', 'рад', 'рада',
+        'стало спокойнее', 'меньше тревоги', 'тревога ушла',
+        'стало легче', 'надежда', 'есть надежда', 'верю в лучшее',
+        'больше энергии', 'очень счастлив', 'очень счастлива',
+    ],
+    'patient_reports_decline': [
+        'хуже', 'стало хуже', 'ухудшение', 'ухудшилось', 'становится хуже',
+        'очень плохо', 'совсем плохо', 'не справляюсь',
+        'нет сил', 'упадок сил', 'всё плохо', 'плохо себя чувствую',
+        'тяжело стало', 'хуже чем раньше', 'кризис', 'снова плохо',
+    ],
+    'scheduled_state_check': [
+        'как дела', 'как поживаете', 'как поживаешь',
+        'как себя чувствуете', 'как себя чувствуешь', 'как состояние',
+        'как здоровье', 'как настроение', 'что нового', 'что изменилось',
+    ],
 }
 
 # Priority order — first match wins
@@ -166,6 +198,12 @@ _INTENT_PRIORITY = [
     'waiting',
     'onboarding',
     'continuity_return',    # Phase 5/Step 3: return-after-pause signals
+    # Phase 5/Step 6: Check-in intents (lowest priority)
+    'patient_reports_decline',
+    'patient_reports_life_event',
+    'patient_reports_emotional_shift',
+    'patient_reports_progress',
+    'scheduled_state_check',
     'question',
 ]
 
@@ -315,6 +353,12 @@ def detect_user_state(
         if intent in ('onboarding', 'analysis_upload'):
             return 'onboarding'
         if intent == 'support':
+            return 'support'
+        # Phase 5/Step 6: check-in state mapping
+        if intent == 'patient_reports_decline':
+            return 'anxious'
+        if intent in ('patient_reports_life_event', 'patient_reports_emotional_shift',
+                      'patient_reports_progress', 'scheduled_state_check'):
             return 'support'
 
     # 5. Risk score → anxious
