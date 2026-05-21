@@ -210,7 +210,9 @@ def load_session(contact_id):
             'proposed_route, proposed_agent, route_confidence, route_reason, '
             'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
             'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, '
-            'trust_entered_at_msg '
+            'trust_entered_at_msg, '
+            'care_route, onboarding_stage, rehab_stage, analysis_stage, karen_access, '
+            'continuity_state, last_route_transition '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -241,10 +243,20 @@ def load_session(contact_id):
                 'overlay_consecutive_empathy': int(row.get('overlay_consecutive_empathy') or 0),
                 'overlay_history':             row.get('overlay_history') or [],
                 'trust_entered_at_msg':         int(row.get('trust_entered_at_msg') or 0),
+                # ORCH-CONT: route-state continuity fields (nullable, fail-safe)
+                'care_route':           row.get('care_route'),
+                'onboarding_stage':     row.get('onboarding_stage'),
+                'rehab_stage':          row.get('rehab_stage'),
+                'analysis_stage':       row.get('analysis_stage'),
+                'karen_access':         row.get('karen_access'),
+                'continuity_state':     row.get('continuity_state') or {},
+                'last_route_transition': row.get('last_route_transition'),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
-    return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': '', 'client_data': {'name': '', 'country': '', 'telegram_id': str(contact_id), 'tariff': ''}}
+    return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': '', 'client_data': {'name': '', 'country': '', 'telegram_id': str(contact_id), 'tariff': ''},
+            'care_route': None, 'onboarding_stage': None, 'rehab_stage': None,
+            'analysis_stage': None, 'karen_access': None, 'continuity_state': {}, 'last_route_transition': None}
 
 
 def save_session(contact_id, session):
@@ -258,8 +270,11 @@ def save_session(contact_id, session):
             'current_intent, current_state, '
             'proposed_route, proposed_agent, route_confidence, route_reason, '
             'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
-            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, trust_entered_at_msg) '
-            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s) '
+            'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, trust_entered_at_msg, '
+            'care_route, onboarding_stage, rehab_stage, analysis_stage, karen_access, '
+            'continuity_state, last_route_transition) '
+            'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s, '
+            '%s, %s, %s, %s, %s, %s::jsonb, NOW()) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -283,7 +298,21 @@ def save_session(contact_id, session):
             '    overlay_last_high_msg = EXCLUDED.overlay_last_high_msg, '
             '    overlay_consecutive_empathy = EXCLUDED.overlay_consecutive_empathy, '
             '    overlay_history = EXCLUDED.overlay_history, '
-            '    trust_entered_at_msg = EXCLUDED.trust_entered_at_msg',
+            '    trust_entered_at_msg = EXCLUDED.trust_entered_at_msg, '
+            '    care_route = EXCLUDED.care_route, '
+            '    onboarding_stage = EXCLUDED.onboarding_stage, '
+            '    rehab_stage = EXCLUDED.rehab_stage, '
+            '    analysis_stage = EXCLUDED.analysis_stage, '
+            '    karen_access = EXCLUDED.karen_access, '
+            '    continuity_state = EXCLUDED.continuity_state, '
+            '    last_route_transition = CASE '
+            '        WHEN EXCLUDED.care_route IS DISTINCT FROM pm_sessions.care_route '
+            '          OR EXCLUDED.onboarding_stage IS DISTINCT FROM pm_sessions.onboarding_stage '
+            '          OR EXCLUDED.rehab_stage IS DISTINCT FROM pm_sessions.rehab_stage '
+            '          OR EXCLUDED.analysis_stage IS DISTINCT FROM pm_sessions.analysis_stage '
+            '        THEN NOW() '
+            '        ELSE pm_sessions.last_route_transition '
+            '    END',
             (
                 str(contact_id),
                 session.get('route', 'reception'),
@@ -308,6 +337,13 @@ def save_session(contact_id, session):
                 int(session.get('overlay_consecutive_empathy', 0)),
                 json.dumps(session.get('overlay_history', []), ensure_ascii=False),
                 int(session.get('trust_entered_at_msg', 0)),
+                # ORCH-CONT: route-state continuity fields
+                session.get('care_route'),
+                session.get('onboarding_stage'),
+                session.get('rehab_stage'),
+                session.get('analysis_stage'),
+                session.get('karen_access'),
+                json.dumps(session.get('continuity_state') or {}, ensure_ascii=False),
             )
         )
         conn.commit()
