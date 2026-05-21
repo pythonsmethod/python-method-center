@@ -11,6 +11,7 @@ import httpx
 from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
 from route_resolver import resolve_route
+from checkin_module import detect_checkin_intent, update_checkin_fields, get_checkin_response_template, build_checkin_prompt_prefix
 from auto_router import apply_auto_route
 from emotional_overlay import (
     detect_emotional_overlay,
@@ -183,6 +184,15 @@ def _init_db():
             'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS overlay_consecutive_empathy INTEGER',
             'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS overlay_history JSONB',
             'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS trust_entered_at_msg INTEGER NOT NULL DEFAULT 0',
+            # Phase 5/Step 6: Patient State Check-in columns
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS last_state_check_at TIMESTAMPTZ',
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS mood_status TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS physical_status TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS emotional_status TEXT NOT NULL DEFAULT ''",
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS life_event_note JSONB',
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS positive_life_outcome BOOLEAN NOT NULL DEFAULT FALSE',
+            "ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS patient_win_summary TEXT NOT NULL DEFAULT ''",
+            'ALTER TABLE pm_sessions ADD COLUMN IF NOT EXISTS needs_karen_review BOOLEAN NOT NULL DEFAULT FALSE',
         ]:
             try:
                 cur.execute(col_sql)
@@ -213,7 +223,9 @@ def load_session(contact_id):
             'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, '
             'trust_entered_at_msg, '
             'care_route, onboarding_stage, rehab_stage, analysis_stage, karen_access, '
-            'continuity_state, last_route_transition '
+            'continuity_state, last_route_transition, '
+            'last_state_check_at, mood_status, physical_status, emotional_status, '
+            'life_event_note, positive_life_outcome, patient_win_summary, needs_karen_review '
             'FROM pm_sessions WHERE contact_id = %s',
             (str(contact_id),)
         )
@@ -252,12 +264,23 @@ def load_session(contact_id):
                 'karen_access':         row.get('karen_access'),
                 'continuity_state':     row.get('continuity_state') or {},
                 'last_route_transition': row.get('last_route_transition'),
+                # Phase 5/Step 6: Patient State Check-in fields
+                'last_state_check_at':   row.get('last_state_check_at'),
+                'mood_status':           row.get('mood_status') or '',
+                'physical_status':       row.get('physical_status') or '',
+                'emotional_status':      row.get('emotional_status') or '',
+                'life_event_note':       row.get('life_event_note') or [],
+                'positive_life_outcome': bool(row.get('positive_life_outcome') or False),
+                'patient_win_summary':   row.get('patient_win_summary') or '',
+                'needs_karen_review':    bool(row.get('needs_karen_review') or False),
             }
     except Exception as e:
         print(f'[DB ERROR] load: {e}')
     return {'route': 'reception', 'history': [], 'awaiting_confirmation': False, 'case_summary': '', 'client_data': {'name': '', 'country': '', 'telegram_id': str(contact_id), 'tariff': ''},
             'care_route': None, 'onboarding_stage': None, 'rehab_stage': None,
-            'analysis_stage': None, 'karen_access': None, 'continuity_state': {}, 'last_route_transition': None}
+            'analysis_stage': None, 'karen_access': None, 'continuity_state': {}, 'last_route_transition': None,
+            'last_state_check_at': None, 'mood_status': '', 'physical_status': '', 'emotional_status': '',
+            'life_event_note': [], 'positive_life_outcome': False, 'patient_win_summary': '', 'needs_karen_review': False}
 
 
 def save_session(contact_id, session):
@@ -273,9 +296,12 @@ def save_session(contact_id, session):
             'previous_route, transition_reason, route_transition_log, route_last_switch_msg, '
             'overlay_last_high_msg, overlay_consecutive_empathy, overlay_history, trust_entered_at_msg, '
             'care_route, onboarding_stage, rehab_stage, analysis_stage, karen_access, '
-            'continuity_state, last_route_transition) '
+            'continuity_state, last_route_transition, '
+            'last_state_check_at, mood_status, physical_status, emotional_status, '
+            'life_event_note, positive_life_outcome, patient_win_summary, needs_karen_review) '
             'VALUES (%s, %s, %s::jsonb, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s::jsonb, %s, '
-            '%s, %s, %s, %s, %s, %s::jsonb, NOW()) '
+            '%s, %s, %s, %s, %s, %s::jsonb, NOW(), '
+            '%s, %s, %s, %s, %s::jsonb, %s, %s, %s) '
             'ON CONFLICT (contact_id) DO UPDATE SET '
             '    route = EXCLUDED.route, '
             '    history = EXCLUDED.history, '
@@ -306,6 +332,14 @@ def save_session(contact_id, session):
             '    analysis_stage = EXCLUDED.analysis_stage, '
             '    karen_access = EXCLUDED.karen_access, '
             '    continuity_state = EXCLUDED.continuity_state, '
+            '    last_state_check_at = EXCLUDED.last_state_check_at, '
+            '    mood_status = EXCLUDED.mood_status, '
+            '    physical_status = EXCLUDED.physical_status, '
+            '    emotional_status = EXCLUDED.emotional_status, '
+            '    life_event_note = COALESCE(EXCLUDED.life_event_note, pm_sessions.life_event_note), '
+            '    positive_life_outcome = EXCLUDED.positive_life_outcome, '
+            '    patient_win_summary = EXCLUDED.patient_win_summary, '
+            '    needs_karen_review = EXCLUDED.needs_karen_review, '
             '    last_route_transition = CASE '
             '        WHEN EXCLUDED.care_route IS DISTINCT FROM pm_sessions.care_route '
             '          OR EXCLUDED.onboarding_stage IS DISTINCT FROM pm_sessions.onboarding_stage '
@@ -345,6 +379,15 @@ def save_session(contact_id, session):
                 session.get('analysis_stage'),
                 session.get('karen_access'),
                 json.dumps(session.get('continuity_state') or {}, ensure_ascii=False),
+                # Phase 5/Step 6: check-in fields
+                session.get('last_state_check_at'),
+                session.get('mood_status', ''),
+                session.get('physical_status', ''),
+                session.get('emotional_status', ''),
+                json.dumps(session.get('life_event_note') or [], ensure_ascii=False),
+                bool(session.get('positive_life_outcome', False)),
+                session.get('patient_win_summary', ''),
+                bool(session.get('needs_karen_review', False)),
             )
         )
         conn.commit()
@@ -641,6 +684,37 @@ def process_message(contact_id, user_message):
         session.setdefault('route_reason', 'resolver_error')
     # ─────────────────────────────────────────────────────────────────────
 
+    # ── Phase 5/Step 6: Patient State Check-in ───────────────────────────────
+    try:
+        _checkin_intent = detect_checkin_intent(
+            user_message   = user_message,
+            current_intent = session.get('current_intent', 'question'),
+        )
+        if _checkin_intent:
+            _checkin_changes = update_checkin_fields(session, user_message, _checkin_intent)
+            session['state_checkin_mode'] = True
+            session['checkin_intent'] = _checkin_intent
+            # Karen escalation: send notification if needs_karen_review just set
+            if _checkin_changes.get('needs_karen_review') and not session.get('_karen_notified'):
+                try:
+                    import logging as _ck_log
+                    _ck_log.getLogger('checkin_module').warning(
+                        '[CHECKIN ESCALATE] contact=%s | intent=%s | needs_karen_review=True',
+                        contact_id, _checkin_intent
+                    )
+                    session['_karen_notified'] = True
+                except Exception:
+                    pass
+        else:
+            session['state_checkin_mode'] = False
+            session['checkin_intent'] = None
+    except Exception as _ck_err:
+        import logging as _ck_err_log
+        _ck_err_log.getLogger('checkin_module').warning('[CHECKIN] error: %s', _ck_err)
+        session['state_checkin_mode'] = False
+        session['checkin_intent'] = None
+    # ─────────────────────────────────────────────────────────────────────
+
     # ── Auto-Router v4.0 (Soft Phase 1) ──────────────────────────────────
     try:
         ar = apply_auto_route(
@@ -705,6 +779,24 @@ def process_message(contact_id, user_message):
                     'prompt_prefix': '', 'block_reason': 'overlay_error'}
     # ─────────────────────────────────────────────────────────────────────
 
+    # ── Phase 5/Step 6: Check-in prompt injection ──────────────────────────────
+    try:
+        _checkin_template = get_checkin_response_template(
+            session.get('checkin_intent'),
+            session,
+        ) if session.get('state_checkin_mode') else None
+        if _checkin_template:
+            _checkin_prefix = build_checkin_prompt_prefix(_checkin_template)
+            if _checkin_prefix:
+                import logging as _ci_log
+                _ci_log.getLogger('checkin_module').info(
+                    '[CHECKIN INJECT] contact=%s | template=%s', contact_id, _checkin_template
+                )
+    except Exception as _ci_err:
+        _checkin_template = None
+        _checkin_prefix = ''
+    # ─────────────────────────────────────────────────────────────────────
+
     # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
     if session.get('awaiting_confirmation'):
         session['history'].append({'role': 'user', 'content': user_message})
@@ -714,6 +806,17 @@ def process_message(contact_id, user_message):
 
     current_route = session['route']
     prompt = AGENT_PROMPTS.get(current_route, LUCKY_PROMPT)
+
+    # Phase 5/Step 6: prepend check-in template prefix (if active)
+    try:
+        if session.get('state_checkin_mode') and session.get('checkin_intent'):
+            _ci_prefix = build_checkin_prompt_prefix(
+                get_checkin_response_template(session.get('checkin_intent'), session) or ''
+            )
+            if _ci_prefix:
+                prompt = _ci_prefix + '\n\n' + prompt
+    except Exception:
+        pass
 
     # ── Layer 5: Apply overlay prefix to agent system prompt ─────────────
     try:
