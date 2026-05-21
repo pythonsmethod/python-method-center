@@ -123,24 +123,49 @@ _INTENT_PATTERNS: dict[str, list[str]] = {
     'question': [
         'что такое', 'как работает', 'расскажите', 'объясните',
         'почему', 'зачем', 'для чего', 'можно ли', 'нельзя ли',
-        'что значит', 'что такое метод', 'как это', 'сколько стоит',
+        'что значит', 'что такое метод', 'как это',
         'сколько длится', 'сколько времени', 'где', 'когда',
+    ],
+    # Phase 5/Step 3: added greeting, payment_question, continuity_return
+    'greeting': [
+        'привет', 'здравствуйте', 'добрый день', 'добрый вечер',
+        'доброе утро', 'хай', 'приветствую', 'hello', 'hi',
+        'хорошего дня', 'хорошего вечера',
+    ],
+    'payment_question': [
+        'сколько стоит', 'цена', 'стоимость', 'цены', 'тариф',
+        'тарифы', 'стоит программа', 'стоит курс', 'стоимость программы',
+        'как оплатить', 'как платить', 'способ оплаты', 'оплата',
+        'реквизиты', 'ссылку на оплату', 'способы оплаты',
+        'можно оплатить картой', 'принимаете карты', 'принимаете оплату',
+    ],
+    'continuity_return': [
+        'я вернулась', 'я вернулся', 'я снова здесь', 'я снова тут',
+        'продолжим', 'продолжим с того', 'продолжим с тех пор',
+        'я была занята', 'я был занят', 'давно не писала', 'давно не писал',
+        'возвращаюсь', 'возвращаюсь к нам', 'напомните', 'напомни',
+        'вернулась к вам', 'вернулся к вам', 'снова пишу', 'пишу снова',
+        'продолжаем', 'мы продолжаем', 'где остановились', 'на чём остановились',
     ],
 }
 
 # Priority order — first match wins
 # BUG-7 FIX: 'support' moved above 'analysis_upload'
 # Rationale: in support route, context mentions of 'анализ' should stay as support
+# Phase 5/Step 3: greeting at top, payment_question after ready_to_pay, continuity_return near end
 _INTENT_PRIORITY = [
+    'greeting',             # Phase 5/Step 3: greetings always win first
     'escalation_request',
     'paid',
     'ready_to_pay',
+    'payment_question',     # Phase 5/Step 3: price/payment queries
     'support',          # moved up: route-context support beats generic analysis keyword
     'analysis_upload',
     'fear',
     'doubt',
     'waiting',
     'onboarding',
+    'continuity_return',    # Phase 5/Step 3: return-after-pause signals
     'question',
 ]
 
@@ -164,6 +189,9 @@ def detect_intent(user_message: str, session: dict, context: dict) -> str:
 
     msg = user_message.lower().strip()
     route = context.get('route', 'reception')
+    # Phase 5/Step 3: use persisted route-state fields to inform classification
+    care_route = session.get('care_route') or route
+    last_transition = session.get('last_route_transition')
 
     # Route-based fast-path: if already in a route, some intents are obvious
     if route == 'onboarding':
@@ -179,6 +207,12 @@ def detect_intent(user_message: str, session: dict, context: dict) -> str:
         for kw in _INTENT_PATTERNS['support']:
             if kw in msg:
                 return 'support'
+
+    # Phase 5/Step 3: continuity_return fast-path using persisted route-state
+    if care_route and care_route not in ('reception', None) and last_transition:
+        for kw in _INTENT_PATTERNS.get('continuity_return', []):
+            if kw in msg:
+                return 'continuity_return'
 
     # General keyword scan in priority order
     for intent in _INTENT_PRIORITY:
