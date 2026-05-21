@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
-from agents import process_message, on_payment_confirmed, load_session, save_session
+from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions
 from ai_router import health_check as ai_health_check, ask_claude
 
 logging.basicConfig(
@@ -294,7 +294,8 @@ async def webhook(request: Request):
             caption="Dogovor-oferta Python Method"
         )
 
-    _flow_sess = sessions.get(contact_id, {})
+    # Phase 5/Step 5 P1: read FLOW_METRICS from agents.sessions (real live state, not empty local dict)
+    _flow_sess = _agent_sessions.get(contact_id, {})
     _flow_latency = int((_time.monotonic() - t_start_main) * 1000)
     # Phase 5/Step 4: extended timing metrics (provider_ms = time spent in process_message)
     log.info(
