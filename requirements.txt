@@ -9,3 +9,6 @@ psycopg2-binary
 stripe
 requests
 asyncpg
+pdfplumber
+python-docx
+openpyxl
