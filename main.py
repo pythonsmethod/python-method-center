@@ -479,6 +479,57 @@ async def telegram_webhook(request: Request):
     await send_message(contact_id, reply)
     return JSONResponse({"status": "ok"})
 
+
+@app.get("/telegram/set-webhook")
+async def telegram_set_webhook(request: Request):
+    """
+    Utility: Call this once to register /telegram/webhook with Telegram Bot API.
+    GET /telegram/set-webhook?secret=<RAILWAY_SECRET>
+    Returns Telegram API setWebhook response.
+    Requires TELEGRAM_BOT_TOKEN env var.
+    """
+    import os as _os
+    # Simple auth: require ?secret matching a configured env var
+    provided = request.query_params.get("secret", "")
+    expected = _os.environ.get("WEBHOOK_SECRET", "") or _os.environ.get("SENDPULSE_CLIENT_SECRET", "")
+    if not expected or provided != expected:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    if not TELEGRAM_BOT_TOKEN:
+        return JSONResponse({"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"})
+
+    railway_url = _os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if not railway_url:
+        railway_url = "python-method-center-production-24ec.up.railway.app"
+    webhook_url = f"https://{railway_url}/telegram/webhook"
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            r = await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
+                json={"url": webhook_url, "allowed_updates": ["message", "edited_message"]},
+            )
+            result = r.json()
+            log.info("[TG_DIRECT] setWebhook url=%s result=%s", webhook_url, result)
+            return JSONResponse({"webhook_url": webhook_url, "telegram_response": result})
+    except Exception as e:
+        log.error("[TG_DIRECT] setWebhook error: %s", e)
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
+@app.get("/telegram/get-webhook")
+async def telegram_get_webhook(request: Request):
+    """Check current Telegram webhook info."""
+    if not TELEGRAM_BOT_TOKEN:
+        return JSONResponse({"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"})
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            r = await cli.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getWebhookInfo")
+            return JSONResponse(r.json())
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
 # ============================================================
 # STRIPE WEBHOOK
 # ============================================================
