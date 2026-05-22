@@ -666,6 +666,12 @@ async def extract_content(file_bytes: bytes, fmt: str, mime_type: str,
                 "provider": "none", "error": "ZIP archive",
                 "user_message": ZIP_MESSAGE}
 
+    # Last resort: if format still unknown but we have bytes, try Vision OCR
+    # (handles HEIC, WebP, unusual mime types that Telegram sends)
+    if fmt == "unknown" or fmt == "zip_or_office":
+        log.info("[MEDIA] format_unknown_attempting_vision fmt=%s mime=%s", fmt, mime_type)
+        return await _extract_image(file_bytes, mime_type or "image/jpeg")
+
     log.warning("[MEDIA] unsupported_file_type format=%s", fmt)
     return {"success": False, "text": "", "confidence": "failed",
             "provider": "none", "error": f"unsupported format: {fmt}",
@@ -793,13 +799,26 @@ async def process_attachment_message(
     ocr_quality = ocr_result.get("confidence", "failed")
     char_count  = ocr_result.get("char_count", len(ocr_text))
     is_usable   = ocr_result.get("success", False) and char_count >= _MIN_OCR_TEXT_LEN
-    is_partial  = (not is_usable and char_count >= _MIN_OCR_TEXT_LEN) or (
-                  ocr_result.get("success", False) and ocr_quality == "low")
+    # is_partial: file was received and has SOME usable signal, or OCR failed but file confirmed
+    # Covers: low-quality OCR, API exception with 0 chars, unreadable scan
+    has_some_text = char_count >= _MIN_OCR_TEXT_LEN
+    ocr_api_failed = not ocr_result.get("success", False) and not ocr_result.get("user_message")
+    is_partial = (
+        (not is_usable and has_some_text) or          # has text but below usable threshold
+        (ocr_result.get("success", False) and ocr_quality == "low") or  # low quality success
+        ocr_api_failed                                 # API failed but file was received
+    )
     partial_success_triggered = False
 
     log.info("[MEDIA] ocr_quality_score=%s extracted_characters_count=%d "
              "is_usable=%s is_partial=%s contact=%s",
              ocr_quality, char_count, is_usable, is_partial, contact_id)
+    log.info("[MEDIA_DEBUG] final_decision success=%s chars=%d quality=%s "
+             "is_usable=%s is_partial=%s ocr_api_failed=%s has_some_text=%s "
+             "has_medical=%s status=%s fmt=%s",
+             ocr_result.get("success", False), char_count, ocr_quality,
+             is_usable, is_partial, ocr_api_failed, has_some_text,
+             _has_medical_terms(ocr_text), ocr_result.get("confidence", "?"), fmt)
 
     if is_usable:
         synthetic_msg = ctx_str
@@ -818,8 +837,9 @@ async def process_attachment_message(
         synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
     else:
         log.warning("[MEDIA] ocr_confidence_low contact=%s quality=%s chars=%d "
+                    "ocr_api_failed=%s has_some_text=%s "
                     "fallback_reason=insufficient_text — returning failsafe",
-                    contact_id, ocr_quality, char_count)
+                    contact_id, ocr_quality, char_count, ocr_api_failed, has_some_text)
         return OCR_FAILSAFE_MESSAGE
 
     # Step 6: Call AI pipeline
