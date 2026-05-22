@@ -21,6 +21,9 @@ log = logging.getLogger("python-method")
 
 app = FastAPI(title="Python Method Center")
 
+_APP_DEPLOY_SHA = "a2c94e8-canary-v3"
+log.info("[STARTUP] Python Method Center booting. deploy_sha=%s", _APP_DEPLOY_SHA)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OFERTA_PATH = os.path.join(BASE_DIR, "Python Method Oferta v2.pdf")
 OFERTA_URL = "https://python-method-center-production-24ec.up.railway.app/documents/oferta"
@@ -239,6 +242,7 @@ async def webhook(request: Request):
     _RT_WEBHOOKS += 1
     log.info(f"Webhook received: {str(body)[:300]}")
     contact_id, text, attachment = extract_event(body)
+    log.info(f"[WEBHOOK_DEBUG] contact_id={contact_id} text_len={len(text or '')} text_empty={not bool(text)} has_attachment={attachment is not None} att_type={attachment.get('attachment_type') if attachment else None}")
 
     # Phase 4: handle attachment-only messages (no text guard)
     if not contact_id:
