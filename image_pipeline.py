@@ -72,7 +72,7 @@ _OCR_MEDIUM_MIN     = 40    # chars for unconditional medium confidence
 _OCR_MEDICAL_HIGH   = 40    # chars + medical heuristic → high
 _OCR_MEDICAL_MEDIUM = 10    # chars + medical heuristic → medium
 
-APP_VERSION = "a2c94e8-canary-v3"   # deployment fingerprint
+APP_VERSION = "preprocess-v1"   # deployment fingerprint
 log.info("[PIPELINE_BOOT] image_pipeline loaded version=%s", APP_VERSION)
 
 # ─── User-facing messages (Russian) ──────────────────────────────────────────
@@ -331,44 +331,204 @@ async def download_telegram_file(file_id: str) -> bytes | None:
 
 # ─── Format-specific Extractors ──────────────────────────────────────────────
 
+
+# ─── Image Preprocessing ─────────────────────────────────────────────────────
+# Preprocessing pipeline applied BEFORE Vision OCR.
+# Goal: improve readability of Telegram-compressed, distant, low-DPI medical photos.
+# Safety: does NOT hallucinate text. Only improves image clarity.
+
+_PREPROCESS_MIN_WIDTH  = 1200  # upscale if image narrower than this
+_PREPROCESS_MAX_UPSCALE = 3.0  # never upscale more than 3× to avoid noise amplification
+
+def _preprocess_image(file_bytes: bytes) -> tuple:
+    """
+    Apply OCR-oriented preprocessing to image bytes.
+
+    Steps:
+        1. Grayscale conversion          — removes colour noise, reduces complexity
+        2. Auto-contrast (Pillow CLAHE)  — normalizes brightness/exposure unevenness
+        3. Sharpening                    — enhances fine text edges
+        4. Smart upscaling               — upscale small/distant photos to target DPI
+        5. Border crop heuristics        — crop uniform-colour borders (chat background)
+
+    Returns:
+        (processed_bytes: bytes, meta: dict)
+        meta keys: original_size, processed_size, upscale_ratio,
+                   grayscale_applied, sharpen_applied, crop_applied, error
+
+    Falls back gracefully if Pillow unavailable or any step fails.
+    """
+    meta = {
+        "original_size": (0, 0),
+        "processed_size": (0, 0),
+        "upscale_ratio": 1.0,
+        "grayscale_applied": False,
+        "sharpen_applied": False,
+        "crop_applied": False,
+        "error": None,
+    }
+    try:
+        from PIL import Image, ImageFilter, ImageOps
+        import io as _io
+    except ImportError:
+        log.warning("[PREPROCESS] Pillow not available — skipping preprocessing")
+        meta["error"] = "pillow_missing"
+        return file_bytes, meta
+
+    try:
+        img = Image.open(_io.BytesIO(file_bytes))
+        meta["original_size"] = img.size
+
+        # ── Step 1: Grayscale ──────────────────────────────────────────────────
+        if img.mode not in ("L", "LA"):
+            img = img.convert("L")
+            meta["grayscale_applied"] = True
+
+        # ── Step 2: Auto-contrast (CLAHE-style normalisation) ─────────────────
+        img = ImageOps.autocontrast(img, cutoff=2)
+
+        # ── Step 3: Smart upscaling ───────────────────────────────────────────
+        w, h = img.size
+        if w < _PREPROCESS_MIN_WIDTH:
+            scale = min(_PREPROCESS_MAX_UPSCALE, _PREPROCESS_MIN_WIDTH / w)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            meta["upscale_ratio"] = round(scale, 2)
+        else:
+            meta["upscale_ratio"] = 1.0
+
+        # ── Step 4: Sharpening ────────────────────────────────────────────────
+        img = img.filter(ImageFilter.SHARPEN)
+        img = img.filter(ImageFilter.SHARPEN)  # double-pass for dense small text
+        meta["sharpen_applied"] = True
+
+        # ── Step 5: Border crop heuristic ────────────────────────────────────
+        # Crop rows/cols where >95% of pixels are near-white or near-black
+        # (chat UI backgrounds, dark mode, blank margins)
+        try:
+            bg_threshold = 15   # pixels within 15 of pure white (255) are "border"
+            bbox = ImageOps.invert(img).getbbox()
+            if bbox:
+                cw = bbox[2] - bbox[0]
+                ch = bbox[3] - bbox[1]
+                # Only crop if result is at least 60% of original dimensions
+                if cw >= img.width * 0.6 and ch >= img.height * 0.6:
+                    img = img.crop(bbox)
+                    meta["crop_applied"] = True
+        except Exception:
+            pass  # crop is best-effort
+
+        meta["processed_size"] = img.size
+
+        # ── Serialise to JPEG ─────────────────────────────────────────────────
+        buf = _io.BytesIO()
+        img.save(buf, format="JPEG", quality=92)
+        processed_bytes = buf.getvalue()
+
+        log.info(
+            "[PREPROCESS] original=%dx%d processed=%dx%d upscale=%.1fx "
+            "gray=%s sharpen=%s crop=%s output_bytes=%d",
+            meta["original_size"][0], meta["original_size"][1],
+            meta["processed_size"][0], meta["processed_size"][1],
+            meta["upscale_ratio"],
+            meta["grayscale_applied"], meta["sharpen_applied"], meta["crop_applied"],
+            len(processed_bytes),
+        )
+        return processed_bytes, meta
+
+    except Exception as exc:
+        log.warning("[PREPROCESS] preprocessing failed: %s — using original", exc)
+        meta["error"] = str(exc)
+        return file_bytes, meta
+
+
 async def _extract_image(file_bytes: bytes, mime_type: str) -> dict:
-    """Extract text from image bytes via Vision OCR."""
+    """
+    Extract text from image bytes via Vision OCR.
+
+    Preprocessing comparison mode:
+        1. Try OCR on ORIGINAL bytes first.
+        2. If result is high/medium — return immediately (preprocessing unnecessary).
+        3. If result is low/failed — preprocess image and run OCR again.
+        4. Keep the better result from original vs preprocessed by tier ranking.
+
+    This ensures: previously failing photos (chars=0) benefit from preprocessing
+    without adding latency to photos that OCR reads well natively.
+    """
     log.info("[MEDIA] extraction_started format=image size=%d", len(file_bytes))
-    b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    best_result = None
+    tier_rank = {"high": 3, "medium": 2, "low": 1, "failed": 0}
 
-    if OPENAI_API_KEY:
-        result = await _ocr_openai(b64, mime_type)
-        if result["success"] and result["confidence"] in ("high", "medium"):
-            log.info("[MEDIA] extraction_success format=image provider=openai "
-                     "quality=%s len=%d", result["confidence"], len(result["text"]))
-            return result
-        if result["success"]:  # low quality — keep as candidate, try claude for better
-            best_result = result
-            log.info("[MEDIA] extraction_partial format=image provider=openai "
-                     "quality=%s len=%d — trying claude for upgrade",
-                     result["confidence"], len(result["text"]))
+    async def _ocr_both_providers(img_bytes: bytes, label: str) -> dict:
+        """Run OpenAI + Claude on given image bytes, return best result."""
+        b64_img = base64.b64encode(img_bytes).decode("utf-8")
+        best = None
+        if OPENAI_API_KEY:
+            r = await _ocr_openai(b64_img, mime_type)
+            if r["success"] and r["confidence"] in ("high", "medium"):
+                log.info("[MEDIA] extraction_success format=image provider=openai "
+                         "source=%s quality=%s len=%d", label, r["confidence"], len(r["text"]))
+                return r
+            if r["success"]:
+                best = r
+                log.info("[MEDIA] extraction_partial format=image provider=openai "
+                         "source=%s quality=%s len=%d — trying claude",
+                         label, r["confidence"], len(r["text"]))
+        if ANTHROPIC_API_KEY:
+            r = await _ocr_claude(b64_img, mime_type)
+            if r["success"]:
+                current_rank = tier_rank.get(r["confidence"], 0)
+                best_rank    = tier_rank.get(best["confidence"], 0) if best else 0
+                if current_rank >= best_rank:
+                    best = r
+                log.info("[MEDIA] extraction_success format=image provider=claude "
+                         "source=%s quality=%s len=%d", label, r["confidence"], len(r["text"]))
+        return best
 
-    if ANTHROPIC_API_KEY:
-        result = await _ocr_claude(b64, mime_type)
-        if result["success"]:
-            # Pick best result by confidence tier order: high > medium > low
-            tier_rank = {"high": 3, "medium": 2, "low": 1, "failed": 0}
-            current_rank  = tier_rank.get(result["confidence"], 0)
-            best_rank     = tier_rank.get(best_result["confidence"], 0) if best_result else 0
-            if current_rank >= best_rank:
-                best_result = result
-            log.info("[MEDIA] extraction_success format=image provider=claude "
-                     "quality=%s len=%d", result["confidence"], len(result["text"]))
+    # ── Pass 1: original bytes ────────────────────────────────────────────────
+    original_result = await _ocr_both_providers(file_bytes, "original")
 
-    if best_result and best_result["success"]:
+    # If original gives high/medium — great, return immediately
+    if original_result and original_result["confidence"] in ("high", "medium"):
+        log.info("[MEDIA] extraction_success format=image source=original "
+                 "quality=%s len=%d — preprocessing skipped",
+                 original_result["confidence"], len(original_result["text"]))
+        return original_result
+
+    # ── Pass 2: preprocessing ─────────────────────────────────────────────────
+    # Original result is low or failed — try preprocessing to improve readability
+    preprocessed_bytes, pre_meta = _preprocess_image(file_bytes)
+
+    if pre_meta.get("error"):
+        log.warning("[MEDIA] preprocessing_skipped reason=%s", pre_meta["error"])
+        preprocessed_result = None
+    else:
+        log.info("[MEDIA] preprocessing_applied upscale=%.1fx gray=%s sharpen=%s crop=%s",
+                 pre_meta["upscale_ratio"], pre_meta["grayscale_applied"],
+                 pre_meta["sharpen_applied"], pre_meta["crop_applied"])
+        preprocessed_result = await _ocr_both_providers(preprocessed_bytes, "preprocessed")
+
+    # ── Pick best result from original vs preprocessed ────────────────────────
+    candidates = [r for r in (original_result, preprocessed_result)
+                  if r and r.get("success")]
+
+    if candidates:
+        best_result = max(candidates, key=lambda r: (
+            tier_rank.get(r["confidence"], 0), len(r.get("text", ""))
+        ))
+        orig_chars  = len(original_result.get("text", "")) if original_result else 0
+        pre_chars   = len(preprocessed_result.get("text", "")) if preprocessed_result else 0
+        log.info("[MEDIA] ocr_comparison_done original_chars=%d preprocessed_chars=%d "
+                 "chosen=%s chosen_quality=%s",
+                 orig_chars, pre_chars,
+                 best_result.get("provider", "?"), best_result["confidence"])
         log.info("[MEDIA] extraction_partial_success format=image "
                  "provider=%s quality=%s len=%d",
                  best_result["provider"], best_result["confidence"], len(best_result["text"]))
         return best_result
 
-    log.warning("[MEDIA] extraction_failed format=image")
+    log.warning("[MEDIA] extraction_failed format=image — both passes returned no text")
     return {"success": False, "text": "", "confidence": "failed",
             "provider": "none", "error": "all OCR providers failed"}
 
