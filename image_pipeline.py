@@ -72,7 +72,7 @@ _OCR_MEDIUM_MIN     = 40    # chars for unconditional medium confidence
 _OCR_MEDICAL_HIGH   = 40    # chars + medical heuristic → high
 _OCR_MEDICAL_MEDIUM = 10    # chars + medical heuristic → medium
 
-APP_VERSION = "preprocess-v1"   # deployment fingerprint
+APP_VERSION = "diag-v1"   # deployment fingerprint
 log.info("[PIPELINE_BOOT] image_pipeline loaded version=%s", APP_VERSION)
 
 # ─── User-facing messages (Russian) ──────────────────────────────────────────
@@ -358,6 +358,7 @@ def _preprocess_image(file_bytes: bytes) -> tuple:
 
     Falls back gracefully if Pillow unavailable or any step fails.
     """
+    log.info("[PREPROCESS] _preprocess_image called size=%d", len(file_bytes))
     meta = {
         "original_size": (0, 0),
         "processed_size": (0, 0),
@@ -456,13 +457,15 @@ async def _extract_image(file_bytes: bytes, mime_type: str) -> dict:
     This ensures: previously failing photos (chars=0) benefit from preprocessing
     without adding latency to photos that OCR reads well natively.
     """
-    log.info("[MEDIA] extraction_started format=image size=%d", len(file_bytes))
+    log.info("[MEDIA] extraction_started format=image size=%d mime=%s", len(file_bytes), mime_type)
 
     tier_rank = {"high": 3, "medium": 2, "low": 1, "failed": 0}
 
     async def _ocr_both_providers(img_bytes: bytes, label: str) -> dict:
         """Run OpenAI + Claude on given image bytes, return best result."""
         b64_img = base64.b64encode(img_bytes).decode("utf-8")
+        log.info("[OCR_INPUT] label=%s bytes=%d mime=%s b64_len=%d",
+                 label, len(img_bytes), mime_type, len(b64_img))
         best = None
         if OPENAI_API_KEY:
             r = await _ocr_openai(b64_img, mime_type)
@@ -685,6 +688,12 @@ def _extract_spreadsheet(file_bytes: bytes, file_name: str = "") -> dict:
 
 # ─── Vision OCR Providers ─────────────────────────────────────────────────────
 
+def _safe_openai_mime(mime_type: str) -> str:
+    """Return a mime type that OpenAI Vision accepts in data: URLs."""
+    _OPENAI_OK = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    return mime_type if mime_type in _OPENAI_OK else "image/jpeg"
+
+
 async def _ocr_openai(b64: str, mime_type: str) -> dict:
     """OCR via OpenAI gpt-4o Vision."""
     try:
@@ -707,7 +716,7 @@ async def _ocr_openai(b64: str, mime_type: str) -> dict:
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:{mime_type};base64,{b64}",
+                            "url": f"data:{_safe_openai_mime(mime_type)};base64,{b64}",
                             "detail": "high"
                         }
                     }
@@ -716,6 +725,8 @@ async def _ocr_openai(b64: str, mime_type: str) -> dict:
             max_tokens=2000,
         )
         extracted = response.choices[0].message.content or ""
+        _raw_sample = extracted[:300].replace("\n", " ") if extracted else ""
+        log.info("[OCR_RAW] provider=openai chars=%d sample=%r", len(extracted), _raw_sample)
         quality   = _score_ocr_quality(extracted)
         success   = quality != "failed"
         log.info("[MEDIA] ocr_openai len=%d quality=%s has_medical=%s",
@@ -724,7 +735,7 @@ async def _ocr_openai(b64: str, mime_type: str) -> dict:
                 "confidence": quality, "provider": "openai", "error": None,
                 "char_count": len(extracted)}
     except Exception as e:
-        log.error("[MEDIA] ocr_openai error: %s", e)
+        log.error("[OCR_ERROR] provider=openai error_type=%s error=%s", type(e).__name__, e)
         return {"success": False, "text": "", "confidence": "failed",
                 "provider": "openai", "error": str(e)}
 
@@ -766,6 +777,8 @@ async def _ocr_claude(b64: str, mime_type: str) -> dict:
             }]
         )
         extracted = response.content[0].text if response.content else ""
+        _raw_sample = extracted[:300].replace("\n", " ") if extracted else ""
+        log.info("[OCR_RAW] provider=claude chars=%d sample=%r", len(extracted), _raw_sample)
         quality   = _score_ocr_quality(extracted)
         success   = quality != "failed"
         log.info("[MEDIA] ocr_claude len=%d quality=%s has_medical=%s",
@@ -774,7 +787,7 @@ async def _ocr_claude(b64: str, mime_type: str) -> dict:
                 "confidence": quality, "provider": "claude", "error": None,
                 "char_count": len(extracted)}
     except Exception as e:
-        log.error("[MEDIA] ocr_claude error: %s", e)
+        log.error("[OCR_ERROR] provider=claude error_type=%s error=%s", type(e).__name__, e)
         return {"success": False, "text": "", "confidence": "failed",
                 "provider": "claude", "error": str(e)}
 
@@ -940,6 +953,8 @@ async def process_attachment_message(
         return FILE_TOO_LARGE_MESSAGE
 
     # Step 2: Extract content
+    log.info("[MEDIA] file_downloaded contact=%s size=%d mime=%s fmt=%s name=%s",
+             contact_id, len(file_bytes), mime_type, fmt, file_name)
     ocr_result = await extract_content(file_bytes, fmt, mime_type, file_name)
 
     # Handle user_message overrides for unsupported types
