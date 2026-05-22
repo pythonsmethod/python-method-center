@@ -54,6 +54,7 @@ OFERTA_URL = "https://python-method-center-production-24ec.up.railway.app/docume
 
 SENDPULSE_CLIENT_ID = os.environ.get("SENDPULSE_CLIENT_ID")
 SENDPULSE_CLIENT_SECRET = os.environ.get("SENDPULSE_CLIENT_SECRET")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("NOTIFY_BOT_TOKEN", "")
 
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
@@ -149,6 +150,11 @@ async def get_sendpulse_token() -> "str | None":
 
 
 async def send_message(contact_id: str, text: str) -> bool:
+    # Direct Telegram mode for tg_ prefixed contact_ids (from /telegram/webhook)
+    if contact_id and contact_id.startswith("tg_"):
+        chat_id = contact_id[3:]  # strip "tg_" prefix
+        return await _send_message_telegram(chat_id, text)
+    # SendPulse mode (default path)
     token = await get_sendpulse_token()
     if not token:
         log.error("No SendPulse token")
@@ -209,6 +215,74 @@ async def send_document(contact_id: str, document_url: str, caption: str = "") -
 
 
 # ============================================================
+# DIRECT TELEGRAM HELPERS
+# ============================================================
+async def _send_message_telegram(chat_id: str, text: str) -> bool:
+    """Send a message via direct Telegram Bot API (used for tg_ contact_ids)."""
+    if not TELEGRAM_BOT_TOKEN:
+        log.error("[TG_DIRECT] No TELEGRAM_BOT_TOKEN configured")
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=15) as cli:
+            r = await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json={"chat_id": chat_id, "text": text},
+            )
+            if r.status_code >= 400:
+                log.error("[TG_DIRECT] sendMessage %d: %s", r.status_code, r.text[:200])
+                return False
+            log.info("[TG_DIRECT] sent chat_id=%s chars=%d", chat_id, len(text))
+            return True
+    except Exception as e:
+        log.error("[TG_DIRECT] send_message_telegram error: %s", e)
+        return False
+
+
+def extract_event_telegram(body: dict):
+    """
+    Parse a native Telegram Bot API update.
+    Returns (contact_id, text, attachment) with contact_id = 'tg_' + chat_id.
+    Supports: message.text, message.photo, message.document, message.caption.
+    """
+    msg = body.get("message") or body.get("edited_message") or {}
+    if not msg:
+        return None, None, None
+
+    chat = msg.get("chat") or {}
+    chat_id = chat.get("id")
+    if not chat_id:
+        return None, None, None
+
+    contact_id = f"tg_{chat_id}"
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+
+    attachment = None
+    if msg.get("photo"):
+        photos = msg["photo"]
+        best = max(photos, key=lambda p: p.get("file_size", 0))
+        attachment = {
+            "attachment_type": "photo",
+            "file_id": best.get("file_id", ""),
+            "file_url": "",           # no SendPulse proxy; Telegram getFile will be used
+            "file_name": "photo.jpg",
+            "mime_type": "image/jpeg",
+            "caption": text,
+        }
+    elif msg.get("document"):
+        doc = msg["document"]
+        attachment = {
+            "attachment_type": "document",
+            "file_id": doc.get("file_id", ""),
+            "file_url": "",           # no SendPulse proxy; Telegram getFile will be used
+            "file_name": doc.get("file_name", "document"),
+            "mime_type": doc.get("mime_type", "application/octet-stream"),
+            "caption": text,
+        }
+
+    return contact_id, text, attachment
+
+
+# ============================================================
 # WEBHOOK PARSING
 # ============================================================
 def extract_event(body):
@@ -266,6 +340,7 @@ async def webhook(request: Request):
     _RT_WEBHOOKS += 1
     log.info(f"Webhook received: {str(body)[:300]}")
     contact_id, text, attachment = extract_event(body)
+    log.info(f"[WEBHOOK_SOURCE] source=sendpulse contact_id={contact_id}")
     log.info(f"[WEBHOOK_DEBUG] contact_id={contact_id} text_len={len(text or '')} text_empty={not bool(text)} has_attachment={attachment is not None} att_type={attachment.get('attachment_type') if attachment else None}")
 
     # Phase 4: handle attachment-only messages (no text guard)
@@ -353,6 +428,56 @@ async def webhook(request: Request):
     )
     return JSONResponse({"status": "ok" if sent else "send_failed"})
 
+
+
+
+# ============================================================
+# DIRECT TELEGRAM WEBHOOK (bypass SendPulse for testing)
+# ============================================================
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request):
+    """
+    Native Telegram Bot API webhook endpoint.
+    Use this for direct Telegram → Railway integration (bypasses SendPulse).
+    Set with: api.telegram.org/bot{TOKEN}/setWebhook?url={RAILWAY_URL}/telegram/webhook
+    contact_id will be 'tg_' + chat_id so replies go via Telegram sendMessage directly.
+    SendPulse path (/webhook) remains unchanged.
+    """
+    try:
+        body = await request.json()
+    except Exception as e:
+        log.error("[TG_DIRECT] Bad JSON: %s", e)
+        return JSONResponse({"status": "bad_json"})
+
+    log.info("[TG_DIRECT] update received: %s", str(body)[:300])
+
+    contact_id, text, attachment = extract_event_telegram(body)
+    log.info("[WEBHOOK_SOURCE] source=telegram_direct contact_id=%s", contact_id)
+
+    if not contact_id:
+        log.info("[TG_DIRECT] Ignoring - no contact_id extracted")
+        return JSONResponse({"status": "ignored"})
+
+    # Attachment-only (photo or document, no text)
+    if not text and attachment:
+        log.info("[TG_DIRECT] %s -> attachment-only, routing to image pipeline", contact_id)
+        reply = await process_attachment_message(
+            contact_id, attachment, process_message,
+            session_update_fn=update_session_from_analysis
+        )
+        log.info("[TG_DIRECT] %s <- (attachment reply) %s", contact_id, str(reply)[:100])
+        await send_message(contact_id, reply)
+        return JSONResponse({"status": "ok"})
+
+    if not text:
+        log.info("[TG_DIRECT] Ignoring - no text, no attachment")
+        return JSONResponse({"status": "ignored"})
+
+    log.info("[TG_DIRECT] %s -> %s", contact_id, text[:100])
+    reply = await process_message(contact_id, text)
+    log.info("[TG_DIRECT] %s <- %s", contact_id, str(reply)[:100])
+    await send_message(contact_id, reply)
+    return JSONResponse({"status": "ok"})
 
 # ============================================================
 # STRIPE WEBHOOK
