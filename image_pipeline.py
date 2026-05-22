@@ -72,7 +72,7 @@ _OCR_MEDIUM_MIN     = 40    # chars for unconditional medium confidence
 _OCR_MEDICAL_HIGH   = 40    # chars + medical heuristic → high
 _OCR_MEDICAL_MEDIUM = 10    # chars + medical heuristic → medium
 
-APP_VERSION = "diag-v1"   # deployment fingerprint
+APP_VERSION = "sendpulse-url-fix-v1"   # deployment fingerprint
 log.info("[PIPELINE_BOOT] image_pipeline loaded version=%s", APP_VERSION)
 
 # ─── User-facing messages (Russian) ──────────────────────────────────────────
@@ -264,12 +264,15 @@ def extract_attachment(body: dict) -> dict | None:
     # --- photo (compressed) ---
     photo_arr = tg_msg.get("photo") or cd.get("photo")
     if photo_arr and isinstance(photo_arr, list) and len(photo_arr) > 0:
-        best    = photo_arr[-1]
-        file_id = best.get("file_id", "")
-        if file_id:
-            log.info("[MEDIA] file_detected type=photo file_id=%.20s", file_id)
+        best      = photo_arr[-1]
+        file_id   = best.get("file_id", "")
+        file_url  = best.get("file_url", "")   # SendPulse proxy URL — use instead of getFile
+        if file_id or file_url:
+            log.info("[MEDIA] file_detected type=photo file_id=%.20s file_url=%.40s",
+                     file_id, file_url)
             return {
                 "file_id":         file_id,
+                "file_url":        file_url,
                 "attachment_type": "image",
                 "caption":         caption,
                 "mime_type":       "image/jpeg",
@@ -280,14 +283,16 @@ def extract_attachment(body: dict) -> dict | None:
     doc = tg_msg.get("document") or cd.get("document")
     if doc and isinstance(doc, dict):
         file_id   = doc.get("file_id", "")
+        file_url  = doc.get("file_url", "")   # SendPulse proxy URL
         mime_type = doc.get("mime_type", "application/octet-stream")
         file_name = doc.get("file_name", "")
-        if file_id:
+        if file_id or file_url:
             fmt   = _detect_format(mime_type, file_name)
-            log.info("[MEDIA] file_detected type=%s mime=%s name=%s file_id=%.20s",
-                     fmt, mime_type, file_name, file_id)
+            log.info("[MEDIA] file_detected type=%s mime=%s name=%s file_id=%.20s file_url=%.40s",
+                     fmt, mime_type, file_name, file_id, file_url)
             return {
                 "file_id":         file_id,
+                "file_url":        file_url,
                 "attachment_type": fmt,
                 "caption":         caption,
                 "mime_type":       mime_type,
@@ -299,8 +304,32 @@ def extract_attachment(body: dict) -> dict | None:
 
 # ─── Telegram File Download ───────────────────────────────────────────────────
 
-async def download_telegram_file(file_id: str) -> bytes | None:
-    """Download a Telegram file by file_id. Returns raw bytes or None."""
+async def download_telegram_file(file_id: str, direct_url: str = "") -> bytes | None:
+    """
+    Download a file. Two paths:
+    1. direct_url provided (SendPulse proxy URL)  → HTTP GET directly, no Telegram API needed.
+    2. file_id only                               → Telegram getFile + download (requires same bot).
+    SendPulse relays webhooks with its own bot, so file_ids cannot be fetched via our bot token.
+    The direct_url from SendPulse's photo.file_url is the correct download path.
+    """
+    # ── Path 1: SendPulse proxy URL — bypass Telegram getFile entirely ────────
+    if direct_url and direct_url.startswith("http"):
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                r = await client.get(direct_url)
+                r.raise_for_status()
+                raw = r.content
+                log.info("[MEDIA] file_downloaded_direct bytes=%d url=%.60s", len(raw), direct_url)
+                return raw
+        except Exception as e:
+            log.error("[MEDIA] direct_download error: %s — falling back to getFile", e)
+            # fall through to Telegram path
+
+    # ── Path 2: Telegram getFile (only works if this bot received the file) ───
+    if not file_id:
+        log.error("[MEDIA] no file_id and no direct_url — cannot download")
+        return None
+
     if not TELEGRAM_BOT_TOKEN:
         log.error("[MEDIA] TELEGRAM_BOT_TOKEN not set — cannot download file")
         return None
@@ -933,6 +962,7 @@ async def process_attachment_message(
     6. Call process_message_fn with enriched context
     """
     file_id   = attachment_meta.get("file_id", "")
+    file_url  = attachment_meta.get("file_url", "")   # SendPulse direct proxy URL
     fmt       = attachment_meta.get("attachment_type", "unknown")
     mime_type = attachment_meta.get("mime_type", "application/octet-stream")
     file_name = attachment_meta.get("file_name", "")
@@ -942,7 +972,8 @@ async def process_attachment_message(
              contact_id, fmt, file_id)
 
     # Step 1: Download
-    file_bytes = await download_telegram_file(file_id)
+    # file_url (SendPulse proxy) is preferred — avoids Telegram getFile bot-ownership issue
+    file_bytes = await download_telegram_file(file_id, direct_url=file_url)
     if not file_bytes:
         log.error("[MEDIA] extraction_failed — could not download file contact=%s", contact_id)
         return OCR_FAILSAFE_MESSAGE
