@@ -19,9 +19,33 @@ logging.basicConfig(
 )
 log = logging.getLogger("python-method")
 
+# ─── In-memory log ring buffer ────────────────────────────────────────────────
+import collections as _collections
+
+class _MemoryLogHandler(logging.Handler):
+    """Captures last N log records into a deque for /debug/logs endpoint."""
+    def __init__(self, maxlen=300):
+        super().__init__()
+        self._buf = _collections.deque(maxlen=maxlen)
+    def emit(self, record):
+        try:
+            self._buf.append({
+                "t": record.created,
+                "lvl": record.levelname,
+                "msg": self.format(record),
+            })
+        except Exception:
+            pass
+    def get_all(self):
+        return list(self._buf)
+
+_MEM_LOG_HANDLER = _MemoryLogHandler(maxlen=300)
+_MEM_LOG_HANDLER.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.getLogger().addHandler(_MEM_LOG_HANDLER)
+
 app = FastAPI(title="Python Method Center")
 
-_APP_DEPLOY_SHA = "a2c94e8-canary-v3"
+_APP_DEPLOY_SHA = "diag-v1"
 log.info("[STARTUP] Python Method Center booting. deploy_sha=%s", _APP_DEPLOY_SHA)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -412,6 +436,19 @@ async def health():
         "shadow_mode": PIPELINE_SHADOW_MODE,
         "pipeline_mode": USE_NEW_MESSAGE_PIPELINE,
     }
+
+
+@app.get("/debug/logs")
+async def debug_logs(n: int = 200, q: str = ""):
+    """
+    Return last N in-memory log records.
+    Optional: ?q=OCR_RAW to filter by substring.
+    Usage: /debug/logs?n=100&q=OCR_RAW
+    """
+    records = _MEM_LOG_HANDLER.get_all()
+    if q:
+        records = [r for r in records if q.lower() in r["msg"].lower()]
+    return {"count": len(records), "logs": records[-n:]}
 
 
 @app.get("/documents/oferta")
