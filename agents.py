@@ -5,6 +5,7 @@
 import os
 import json
 import re
+import logging
 from anthropic import Anthropic
 from ai_router import ask_claude, ask_gpt, gpt_generate_summary, gpt_analyze_client_status, health_check
 import httpx
@@ -36,6 +37,7 @@ import time
 NOTIFY_BOT_TOKEN = os.environ.get('NOTIFY_BOT_TOKEN')
 KAREN_CHAT_ID = '6181048365'
 ANNA_CHAT_ID = '402361257'
+log = logging.getLogger("python-method")
 
 def generate_summary(history):
 
