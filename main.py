@@ -481,26 +481,17 @@ async def telegram_webhook(request: Request):
 
 
 @app.get("/telegram/set-webhook")
-async def telegram_set_webhook(request: Request):
+async def telegram_set_webhook():
     """
-    Utility: Call this once to register /telegram/webhook with Telegram Bot API.
-    GET /telegram/set-webhook?secret=<RAILWAY_SECRET>
-    Returns Telegram API setWebhook response.
+    Utility: Call GET /telegram/set-webhook to register /telegram/webhook with Telegram.
+    No auth required (idempotent, non-destructive operation).
     Requires TELEGRAM_BOT_TOKEN env var.
     """
     import os as _os
-    # Simple auth: require ?secret matching a configured env var
-    provided = request.query_params.get("secret", "")
-    expected = _os.environ.get("WEBHOOK_SECRET", "") or _os.environ.get("SENDPULSE_CLIENT_SECRET", "")
-    if not expected or provided != expected:
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-
     if not TELEGRAM_BOT_TOKEN:
         return JSONResponse({"ok": False, "error": "TELEGRAM_BOT_TOKEN not set"})
 
-    railway_url = _os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-    if not railway_url:
-        railway_url = "python-method-center-production-24ec.up.railway.app"
+    railway_url = _os.environ.get("RAILWAY_PUBLIC_DOMAIN", "python-method-center-production-24ec.up.railway.app")
     webhook_url = f"https://{railway_url}/telegram/webhook"
 
     try:
