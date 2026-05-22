@@ -43,7 +43,7 @@ import logging
 import httpx
 from analysis_module import (
     save_analysis_to_session, evaluate_escalation,
-    check_analysis_completeness, build_analysis_waiting_message
+    check_analysis_completeness
 )
 
 log = logging.getLogger("image_pipeline")
