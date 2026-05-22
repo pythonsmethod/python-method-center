@@ -27,7 +27,8 @@ import httpx
 log = logging.getLogger("image_pipeline")
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+# Try TELEGRAM_BOT_TOKEN first, fall back to NOTIFY_BOT_TOKEN (existing Railway var)
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("NOTIFY_BOT_TOKEN", "")
 OPENAI_API_KEY     = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 
