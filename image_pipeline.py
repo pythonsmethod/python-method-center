@@ -23,6 +23,11 @@ import io
 import base64
 import logging
 import httpx
+from analysis_module import (
+    save_analysis_to_session, evaluate_escalation,
+    check_analysis_completeness, get_receipt_confirmation,
+    enter_waiting_state, log_missing_analysis_request,
+)
 
 log = logging.getLogger("image_pipeline")
 
@@ -345,7 +350,8 @@ ANALYSIS_COLLECTION_ACK = (
 async def process_attachment_message(
     contact_id: str,
     attachment_meta: dict,
-    process_message_fn,   # callable: process_message(contact_id, text)
+    process_message_fn,         # callable: process_message(contact_id, text)
+    session_update_fn = None,   # optional: callable(contact_id, ocr_result, attachment_meta) -> None
 ) -> str:
     """
     Full attachment handling pipeline:
@@ -379,6 +385,14 @@ async def process_attachment_message(
     # Step 3: Build context
     ctx_str = build_attachment_context(attachment_meta, ocr_result)
 
+    # Step 3b: Update session with analysis metadata (if session_update_fn provided)
+    if session_update_fn is not None:
+        try:
+            session_update_fn(contact_id, ocr_result, attachment_meta)
+            log.info("[MEDIA] session_updated via session_update_fn contact=%s", contact_id)
+        except Exception as _suf_err:
+            log.warning("[MEDIA] session_update_fn error: %s", _suf_err)
+
     # Determine synthetic user message
     if ocr_result["success"] and len(ocr_result["text"]) >= _MIN_OCR_TEXT_LEN:
         # Pass OCR text as the user message so the full pipeline can process it
@@ -393,7 +407,14 @@ async def process_attachment_message(
         log.warning("[MEDIA] ocr_confidence_low contact=%s — returning failsafe", contact_id)
         return OCR_FAILSAFE_MESSAGE
 
-    # Step 4: Call existing process_message pipeline with enriched context
+    # Step 4: Save analysis metadata to session via analysis_module
+    # We need to get the session from process_message_fn's closure if possible
+    # Since we can't access session directly here, we pass a synthetic "receipt" message
+    # that contains structured context the analysis_module-aware process_message will handle
+    # The structured context is already in synthetic_msg as [ATTACHMENT_CONTEXT]
+    # analysis_module.save_analysis_to_session is called inside agents.py when analysis route detected
+
+    # Step 5: Call existing process_message pipeline with enriched context
     try:
         reply = process_message_fn(contact_id, synthetic_msg)
     except Exception as e:
