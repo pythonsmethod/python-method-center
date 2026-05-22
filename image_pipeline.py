@@ -60,13 +60,27 @@ _TELEGRAM_FILE_URL = "https://api.telegram.org/file/bot{token}/{file_path}"
 MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024   # 20 MB
 MAX_PDF_PAGES       = 10
 MAX_EXTRACTED_LEN   = 8000
-_MIN_OCR_TEXT_LEN   = 30
+_MIN_OCR_TEXT_LEN   = 10   # absolute floor — below this is noise/empty
+
+# ─── OCR Quality Tiers ──────────────────────────────────────────────────────────
+# high   : >= 80 chars OR >= 40 chars with medical heuristics   → proceed normally
+# medium : >= 40 chars OR >= 10 chars with medical heuristics   → proceed normally
+# low    : >= 10 chars, no medical match                        → proceed with internal note
+# failed : < 10 chars or empty                                  → failsafe message
+_OCR_HIGH_MIN       = 80    # chars for unconditional high confidence
+_OCR_MEDIUM_MIN     = 40    # chars for unconditional medium confidence
+_OCR_MEDICAL_HIGH   = 40    # chars + medical heuristic → high
+_OCR_MEDICAL_MEDIUM = 10    # chars + medical heuristic → medium
 
 # ─── User-facing messages (Russian) ──────────────────────────────────────────
 OCR_FAILSAFE_MESSAGE = (
     "Файл получен, но мне не удалось его полностью распознать. "
     "Пожалуйста, отправьте его в формате PDF, Word, JPG/PNG "
     "или сфотографируйте листы ближе и чётче."
+)
+OCR_PARTIAL_SUCCESS_MESSAGE = (
+    "Мы получили документ. Часть данных удалось распознать успешно. "
+    "При необходимости система может позже запросить более чёткие страницы."
 )
 FILE_TOO_LARGE_MESSAGE = (
     "Файл слишком большой для обработки (максимум 20 МБ). "
@@ -108,6 +122,63 @@ _XLSX_MIMES  = {
 _XLSX_EXTS   = {".xls", ".xlsx"}
 _ZIP_MIMES   = {"application/zip", "application/x-zip-compressed", "application/octet-stream"}
 _ZIP_EXTS    = {".zip"}
+
+
+# ─── Medical Document Heuristics ─────────────────────────────────────────────
+# Keywords indicating a medical document — used to bias toward partial_success
+_MEDICAL_TERMS = {
+    # Russian lab/report terms
+    "анализ", "анализы", "результат", "показатель", "референс", "норма",
+    "лейкоцит", "эритроцит", "гемоглобин", "тромбоцит", "гематокрит",
+    "лимфоцит", "моноцит", "нейтрофил", "эозинофил", "базофил",
+    "глюкоза", "холестерин", "билирубин", "креатинин", "мочевина",
+    "белок", "альбумин", "ферритин", "трансфераза", "ферментов",
+    "онкомаркер", "пса", "са-125", "раково", "опухол", "онколог",
+    "мрт", "кт", "узи", "рентген", "гистолог", "цитолог", "биопси",
+    "диагноз", "заключение", "врач", "больниц", "клиник", "лаборатор",
+    # Latin/international lab markers
+    "hb", "hba1c", "wbc", "rbc", "plt", "mcv", "mch", "mchc",
+    "alt", "ast", "ggt", "alp", "ldh", "crp", "esr", "psa",
+    "tsh", "t3", "t4", "insulin", "cortisol", "ferritin",
+    "glucose", "creatinine", "urea", "bilirubin", "cholesterol",
+    "mmol", "mg/dl", "g/l", "u/l", "мкмол", "нмол", "пмол",
+    # Structural markers
+    "дата", "date", "пациент", "patient", "ф.и.о", "возраст",
+    "пол:", "male", "female", "мужской", "женский",
+    "результат", "reference", "норма:", "range",
+}
+
+def _has_medical_terms(text: str) -> bool:
+    """Return True if text contains recognisable medical vocabulary."""
+    lower = text.lower()
+    return any(term in lower for term in _MEDICAL_TERMS)
+
+def _score_ocr_quality(text: str) -> str:
+    """
+    Assign a 4-tier OCR quality score based on character count + medical heuristics.
+
+    Tiers:
+        high   — reliable, proceed normally
+        medium — usable, proceed normally
+        low    — marginal but contains some content, proceed with internal note
+        failed — too little text to use, trigger failsafe
+    """
+    if not text:
+        return "failed"
+    n = len(text.strip())
+    has_medical = _has_medical_terms(text)
+
+    if n >= _OCR_HIGH_MIN:
+        return "high"
+    if n >= _OCR_MEDICAL_HIGH and has_medical:
+        return "high"
+    if n >= _OCR_MEDIUM_MIN:
+        return "medium"
+    if n >= _OCR_MEDICAL_MEDIUM and has_medical:
+        return "medium"
+    if n >= _MIN_OCR_TEXT_LEN:
+        return "low"
+    return "failed"
 
 
 def _detect_format(mime_type: str, file_name: str) -> str:
@@ -263,19 +334,37 @@ async def _extract_image(file_bytes: bytes, mime_type: str) -> dict:
     log.info("[MEDIA] extraction_started format=image size=%d", len(file_bytes))
     b64 = base64.b64encode(file_bytes).decode("utf-8")
 
+    best_result = None
+
     if OPENAI_API_KEY:
         result = await _ocr_openai(b64, mime_type)
-        if result["success"]:
-            log.info("[MEDIA] extraction_success format=image provider=openai len=%d",
-                     len(result["text"]))
+        if result["success"] and result["confidence"] in ("high", "medium"):
+            log.info("[MEDIA] extraction_success format=image provider=openai "
+                     "quality=%s len=%d", result["confidence"], len(result["text"]))
             return result
+        if result["success"]:  # low quality — keep as candidate, try claude for better
+            best_result = result
+            log.info("[MEDIA] extraction_partial format=image provider=openai "
+                     "quality=%s len=%d — trying claude for upgrade",
+                     result["confidence"], len(result["text"]))
 
     if ANTHROPIC_API_KEY:
         result = await _ocr_claude(b64, mime_type)
         if result["success"]:
-            log.info("[MEDIA] extraction_success format=image provider=claude len=%d",
-                     len(result["text"]))
-            return result
+            # Pick best result by confidence tier order: high > medium > low
+            tier_rank = {"high": 3, "medium": 2, "low": 1, "failed": 0}
+            current_rank  = tier_rank.get(result["confidence"], 0)
+            best_rank     = tier_rank.get(best_result["confidence"], 0) if best_result else 0
+            if current_rank >= best_rank:
+                best_result = result
+            log.info("[MEDIA] extraction_success format=image provider=claude "
+                     "quality=%s len=%d", result["confidence"], len(result["text"]))
+
+    if best_result and best_result["success"]:
+        log.info("[MEDIA] extraction_partial_success format=image "
+                 "provider=%s quality=%s len=%d",
+                 best_result["provider"], best_result["confidence"], len(best_result["text"]))
+        return best_result
 
     log.warning("[MEDIA] extraction_failed format=image")
     return {"success": False, "text": "", "confidence": "failed",
@@ -465,11 +554,13 @@ async def _ocr_openai(b64: str, mime_type: str) -> dict:
             max_tokens=2000,
         )
         extracted = response.choices[0].message.content or ""
-        success   = len(extracted) >= _MIN_OCR_TEXT_LEN
-        confidence= "high" if success else "low"
-        log.info("[MEDIA] ocr_openai len=%d confidence=%s", len(extracted), confidence)
+        quality   = _score_ocr_quality(extracted)
+        success   = quality != "failed"
+        log.info("[MEDIA] ocr_openai len=%d quality=%s has_medical=%s",
+                 len(extracted), quality, _has_medical_terms(extracted))
         return {"success": success, "text": extracted[:MAX_EXTRACTED_LEN],
-                "confidence": confidence, "provider": "openai", "error": None}
+                "confidence": quality, "provider": "openai", "error": None,
+                "char_count": len(extracted)}
     except Exception as e:
         log.error("[MEDIA] ocr_openai error: %s", e)
         return {"success": False, "text": "", "confidence": "failed",
@@ -513,11 +604,13 @@ async def _ocr_claude(b64: str, mime_type: str) -> dict:
             }]
         )
         extracted = response.content[0].text if response.content else ""
-        success   = len(extracted) >= _MIN_OCR_TEXT_LEN
-        confidence= "high" if success else "low"
-        log.info("[MEDIA] ocr_claude len=%d confidence=%s", len(extracted), confidence)
+        quality   = _score_ocr_quality(extracted)
+        success   = quality != "failed"
+        log.info("[MEDIA] ocr_claude len=%d quality=%s has_medical=%s",
+                 len(extracted), quality, _has_medical_terms(extracted))
         return {"success": success, "text": extracted[:MAX_EXTRACTED_LEN],
-                "confidence": confidence, "provider": "claude", "error": None}
+                "confidence": quality, "provider": "claude", "error": None,
+                "char_count": len(extracted)}
     except Exception as e:
         log.error("[MEDIA] ocr_claude error: %s", e)
         return {"success": False, "text": "", "confidence": "failed",
@@ -605,7 +698,15 @@ def build_attachment_context(attachment_meta: dict, ocr_result: dict) -> str:
     ocr_text  = ocr_result.get("text", "")
     conf      = ocr_result.get("confidence", "failed")
     success   = ocr_result.get("success", False)
-    status    = "success" if success else ("partial" if ocr_text else "failed")
+    # Map confidence tier to EXTRACTION_STATUS
+    if success and conf in ("high", "medium"):
+        status = "success"
+    elif success and conf == "low":
+        status = "partial_success"
+    elif ocr_text and len(ocr_text.strip()) >= _MIN_OCR_TEXT_LEN:
+        status = "partial_success"
+    else:
+        status = "failed"
 
     lines = [
         "[ATTACHMENT_CONTEXT]",
@@ -687,15 +788,38 @@ async def process_attachment_message(
         except Exception as e:
             log.error("[MEDIA] session_update_fn error: %s", e)
 
-    # Step 5: Determine synthetic user message
-    if ocr_result["success"] and len(ocr_result["text"]) >= _MIN_OCR_TEXT_LEN:
+    # Step 5: Determine synthetic user message using 4-tier quality
+    ocr_text    = ocr_result.get("text", "")
+    ocr_quality = ocr_result.get("confidence", "failed")
+    char_count  = ocr_result.get("char_count", len(ocr_text))
+    is_usable   = ocr_result.get("success", False) and char_count >= _MIN_OCR_TEXT_LEN
+    is_partial  = (not is_usable and char_count >= _MIN_OCR_TEXT_LEN) or (
+                  ocr_result.get("success", False) and ocr_quality == "low")
+    partial_success_triggered = False
+
+    log.info("[MEDIA] ocr_quality_score=%s extracted_characters_count=%d "
+             "is_usable=%s is_partial=%s contact=%s",
+             ocr_quality, char_count, is_usable, is_partial, contact_id)
+
+    if is_usable:
+        synthetic_msg = ctx_str
+        if caption:
+            synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
+    elif is_partial:
+        # Partial OCR — enough signal to proceed without alarming the user
+        partial_success_triggered = True
+        log.info("[MEDIA] partial_success_triggered contact=%s quality=%s chars=%d "
+                 "has_medical=%s fallback_reason=low_confidence_usable",
+                 contact_id, ocr_quality, char_count, _has_medical_terms(ocr_text))
         synthetic_msg = ctx_str
         if caption:
             synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
     elif caption:
         synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
     else:
-        log.warning("[MEDIA] ocr_confidence_low contact=%s — returning failsafe", contact_id)
+        log.warning("[MEDIA] ocr_confidence_low contact=%s quality=%s chars=%d "
+                    "fallback_reason=insufficient_text — returning failsafe",
+                    contact_id, ocr_quality, char_count)
         return OCR_FAILSAFE_MESSAGE
 
     # Step 6: Call AI pipeline
@@ -704,6 +828,11 @@ async def process_attachment_message(
     except Exception as e:
         log.error("[MEDIA] process_message_fn error: %s", e)
         reply = OCR_FAILSAFE_MESSAGE
+
+    # For partial success: prepend acknowledgment so user knows document was received
+    if partial_success_triggered and reply and reply != OCR_FAILSAFE_MESSAGE:
+        if OCR_PARTIAL_SUCCESS_MESSAGE not in reply:
+            reply = OCR_PARTIAL_SUCCESS_MESSAGE + "\n\n" + reply
 
     return reply
 
