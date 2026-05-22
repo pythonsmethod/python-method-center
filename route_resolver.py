@@ -66,7 +66,16 @@ def _rule_ready_to_pay(intent, state, ctx, session):
     return intent == 'ready_to_pay' or state == 'ready' or state == 'choosing'
 
 def _rule_analysis(intent, state, ctx, session):
-    return intent == 'analysis_upload'
+    # Phase 5: fire for new upload intent
+    if intent == 'analysis_upload':
+        return True
+    # Phase 5: fire for returning users already in analysis route/stage
+    analysis_stage = session.get('analysis_stage') or (session.get('continuity_state') or {}).get('analysis_stage')
+    if analysis_stage in ('analysis_received', 'analysis_waiting', 'analysis_incomplete', 'analysis_escalated'):
+        return True
+    if session.get('route') in ('analysis_route', 'analysis'):
+        return True
+    return False
 
 def _rule_stuck(intent, state, ctx, session):
     ps = ctx.get('payment_status', 'new')
@@ -207,6 +216,7 @@ def _calc_confidence(intent: str, state: str, ctx: Dict, rule_priority: int) -> 
         ('paid', 'paid'),
         ('onboarding', 'onboarding'),
         ('analysis_upload', 'onboarding'),
+        ('analysis_upload', 'analysis_received'),
         ('waiting', 'waiting'),
         ('support', 'support'),
         ('doubt', 'confused'),
