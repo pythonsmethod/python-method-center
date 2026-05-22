@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
-from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions
+from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions, update_session_from_analysis
 from ai_router import health_check as ai_health_check, ask_claude
 from image_pipeline import extract_attachment, has_attachment, process_attachment_message
 
@@ -246,7 +246,7 @@ async def webhook(request: Request):
         return JSONResponse({"status": "ignored"})
     if not text and attachment:
         log.info(f"[{contact_id}] -> attachment-only message, routing to image pipeline")
-        reply = await process_attachment_message(contact_id, attachment, process_message)
+        reply = await process_attachment_message(contact_id, attachment, process_message, session_update_fn=update_session_from_analysis)
         log.info(f"[{contact_id}] <- (attachment reply) {str(reply)[:100]}")
         await send_message(contact_id, reply)
         return JSONResponse({"status": "ok"})
