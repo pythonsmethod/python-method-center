@@ -860,7 +860,9 @@ def process_message(contact_id, user_message):
     # ─────────────────────────────────────────────────────────────────────
 
     # Phase 5: Analysis route continuity — inject return flow message for returning users
-    if current_route in ('analysis_route', 'analysis') and has_analysis_uploaded(session):
+    # Use session.get() directly — current_route local var is assigned later (UnboundLocalError fix)
+    _route_check = session.get('route', 'reception')
+    if _route_check in ('analysis_route', 'analysis') and has_analysis_uploaded(session):
         _analysis_return_msg = get_return_flow_message(session)
         if _analysis_return_msg and not session.get('_analysis_return_msg_sent'):
             session['history'].append({'role': 'assistant', 'content': _analysis_return_msg})
