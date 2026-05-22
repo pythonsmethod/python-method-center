@@ -1,22 +1,40 @@
 # -*- coding: utf-8 -*-
-# image_pipeline.py — Phase 4 Image/Media Pipeline Stabilization
-# Handles photo, document, and file attachments from Telegram via SendPulse webhook.
+# image_pipeline.py — Universal Document Intake Pipeline (Phase 5 Extension)
+# Handles ALL attachment types from Telegram via SendPulse webhook.
 # Additive module: does NOT break existing text message flow.
 #
-# Pipeline:
-#   extract_attachment() — parse photo/document/file_id from SendPulse update body
-#   download_telegram_file() — fetch file bytes via Telegram Bot API
-#   ocr_extract_text() — extract text via OpenAI Vision (Claude Vision fallback)
-#   build_attachment_context() — structured HAS_ATTACHMENTS context block
-#   process_attachment_message() — top-level handler called from main.py webhook
+# Supported formats:
+#   Images : JPG / JPEG / PNG / WEBP / HEIC / HEIF → Vision OCR
+#   PDF    : text PDF → direct extract | scanned PDF → Vision OCR per page
+#   DOCX   : python-docx text extraction
+#   DOC    : graceful reject (ask user to resend as PDF/DOCX)
+#   TXT    : plain text read
+#   CSV    : plain text read
+#   XLS/XLSX: openpyxl cell extraction
+#   ZIP    : safe reject with instruction
+#   Other  : safe reject with instruction
 #
-# LOGGING:
-#   [MEDIA] attachment_detected
-#   [MEDIA] file_downloaded
-#   [MEDIA] ocr_started
-#   [MEDIA] ocr_success / ocr_failure
-#   [MEDIA] extracted_text_length
-#   [MEDIA] escalation_triggered
+# Safety limits:
+#   MAX_FILE_SIZE_MB = 20
+#   MAX_PDF_PAGES    = 10
+#   MAX_EXTRACTED_LEN= 8000
+#   DOWNLOAD_TIMEOUT = 30s
+#
+# Pipeline entrypoints (preserved from Phase 4):
+#   extract_attachment()        — parse attachment metadata from webhook body
+#   download_telegram_file()    — fetch file bytes via Telegram Bot API
+#   process_attachment_message()— top-level handler called from main.py
+#   has_attachment()            — fast check used in main.py webhook
+#
+# LOGGING tags:
+#   [MEDIA] file_detected
+#   [MEDIA] file_type_detected
+#   [MEDIA] extraction_started
+#   [MEDIA] extraction_success
+#   [MEDIA] extraction_partial
+#   [MEDIA] extraction_failed
+#   [MEDIA] unsupported_file_type
+#   [MEDIA] file_size_rejected
 
 import os
 import io
@@ -25,35 +43,127 @@ import logging
 import httpx
 from analysis_module import (
     save_analysis_to_session, evaluate_escalation,
-    check_analysis_completeness, get_receipt_confirmation,
-    enter_waiting_state, log_missing_analysis_request,
+    check_analysis_completeness, build_analysis_waiting_message
 )
 
 log = logging.getLogger("image_pipeline")
 
 # ─── Config ──────────────────────────────────────────────────────────────────
-# Try TELEGRAM_BOT_TOKEN first, fall back to NOTIFY_BOT_TOKEN (existing Railway var)
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("NOTIFY_BOT_TOKEN", "")
 OPENAI_API_KEY     = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 
-_TELEGRAM_API = "https://api.telegram.org/bot{token}"
+_TELEGRAM_API      = "https://api.telegram.org/bot{token}"
 _TELEGRAM_FILE_URL = "https://api.telegram.org/file/bot{token}/{file_path}"
 
-# OCR confidence threshold: if extracted text shorter than this, treat as low confidence
-_MIN_OCR_TEXT_LEN = 30
+# ─── Safety Limits ───────────────────────────────────────────────────────────
+MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024   # 20 MB
+MAX_PDF_PAGES       = 10
+MAX_EXTRACTED_LEN   = 8000
+_MIN_OCR_TEXT_LEN   = 30
+
+# ─── User-facing messages (Russian) ──────────────────────────────────────────
+OCR_FAILSAFE_MESSAGE = (
+    "Файл получен, но мне не удалось его полностью распознать. "
+    "Пожалуйста, отправьте его в формате PDF, Word, JPG/PNG "
+    "или сфотографируйте листы ближе и чётче."
+)
+FILE_TOO_LARGE_MESSAGE = (
+    "Файл слишком большой для обработки (максимум 20 МБ). "
+    "Пожалуйста, сожмите файл или отправьте только нужные страницы."
+)
+UNSUPPORTED_FORMAT_MESSAGE = (
+    "Этот формат файла не поддерживается. "
+    "Пожалуйста, отправьте файл в формате PDF, Word (DOCX), JPG, PNG или TXT."
+)
+DOC_LEGACY_MESSAGE = (
+    "Файл в формате .doc (старый Word) получен, но не может быть прочитан автоматически. "
+    "Пожалуйста, пересохраните файл в формате .docx, PDF или сфотографируйте страницы."
+)
+ZIP_MESSAGE = (
+    "Получен архив ZIP. Пожалуйста, отправьте файлы по отдельности "
+    "в формате PDF, Word (DOCX), JPG или PNG."
+)
+
+# ─── MIME type → category mapping ────────────────────────────────────────────
+_IMAGE_MIMES = {
+    "image/jpeg", "image/jpg", "image/png", "image/webp",
+    "image/heic", "image/heif", "image/gif", "image/bmp", "image/tiff",
+}
+_IMAGE_EXTS  = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif", ".gif", ".bmp", ".tiff"}
+_PDF_MIMES   = {"application/pdf"}
+_PDF_EXTS    = {".pdf"}
+_DOCX_MIMES  = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+_DOCX_EXTS   = {".docx"}
+_DOC_MIMES   = {"application/msword"}
+_DOC_EXTS    = {".doc"}
+_TEXT_MIMES  = {"text/plain", "text/csv"}
+_TEXT_EXTS   = {".txt", ".csv"}
+_XLSX_MIMES  = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+}
+_XLSX_EXTS   = {".xls", ".xlsx"}
+_ZIP_MIMES   = {"application/zip", "application/x-zip-compressed", "application/octet-stream"}
+_ZIP_EXTS    = {".zip"}
+
+
+def _detect_format(mime_type: str, file_name: str) -> str:
+    """
+    Determine high-level format category from MIME + filename extension.
+    Returns: 'image' | 'pdf' | 'docx' | 'doc' | 'text' | 'spreadsheet' | 'zip' | 'unknown'
+    """
+    mime = (mime_type or "").lower().strip()
+    ext  = ""
+    if file_name:
+        import os as _os
+        ext = _os.path.splitext(file_name.lower())[1]
+
+    if mime in _IMAGE_MIMES or ext in _IMAGE_EXTS:
+        return "image"
+    if mime in _PDF_MIMES or ext in _PDF_EXTS:
+        return "pdf"
+    if mime in _DOCX_MIMES or ext in _DOCX_EXTS:
+        return "docx"
+    if mime in _DOC_MIMES or ext in _DOC_EXTS:
+        return "doc"
+    if mime in _TEXT_MIMES or ext in _TEXT_EXTS:
+        return "text"
+    if mime in _XLSX_MIMES or ext in _XLSX_EXTS:
+        return "spreadsheet"
+    if ext in _ZIP_EXTS:
+        return "zip"
+    if mime in _ZIP_MIMES and ext == ".zip":
+        return "zip"
+    # Byte sniff fallback (checked after download in extract layer)
+    return "unknown"
+
+
+def _byte_sniff_format(file_bytes: bytes) -> str:
+    """Fallback: detect format from magic bytes."""
+    if not file_bytes or len(file_bytes) < 4:
+        return "unknown"
+    sig = file_bytes[:8]
+    if sig[:4] == b"%PDF":
+        return "pdf"
+    if sig[:4] == b"PK\x03\x04":
+        # ZIP or DOCX/XLSX (both are ZIP-based)
+        return "zip_or_office"
+    if sig[:3] in (b"\xff\xd8\xff",):
+        return "image"
+    if sig[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image"
+    return "unknown"
+
 
 # ─── Attachment Detection ─────────────────────────────────────────────────────
 
 def extract_attachment(body: dict) -> dict | None:
     """
     Parse SendPulse webhook body and extract attachment metadata.
-
-    Returns dict with keys:
-        file_id       : Telegram file_id (str)
-        attachment_type: "analysis_photo" | "document" | "photo"
-        caption       : optional caption text
-        mime_type     : mime type if known
+    Returns dict with keys: file_id, attachment_type, caption, mime_type, file_name
     or None if no attachment found.
     """
     if not isinstance(body, dict):
@@ -63,7 +173,6 @@ def extract_attachment(body: dict) -> dict | None:
     if not isinstance(info, dict):
         info = {}
 
-    # Walk the SendPulse nested structure to find channel_data
     msg1 = info.get("message") or body.get("message") or {}
     if not isinstance(msg1, dict):
         msg1 = {}
@@ -72,48 +181,44 @@ def extract_attachment(body: dict) -> dict | None:
     if not isinstance(cd, dict):
         cd = {}
 
-    # Telegram compressed photo: message.channel_data.message.photo
     tg_msg = cd.get("message") or msg1
     if not isinstance(tg_msg, dict):
         tg_msg = {}
 
-    caption = (tg_msg.get("caption") or cd.get("caption") or "").strip()
+    caption   = (tg_msg.get("caption") or cd.get("caption") or "").strip()
+    file_name = ""
 
     # --- photo (compressed) ---
     photo_arr = tg_msg.get("photo") or cd.get("photo")
     if photo_arr and isinstance(photo_arr, list) and len(photo_arr) > 0:
-        # Pick largest resolution (last item)
-        best = photo_arr[-1]
+        best    = photo_arr[-1]
         file_id = best.get("file_id", "")
         if file_id:
-            log.info("[MEDIA] attachment_detected type=photo file_id=%.20s caption=%.60s",
-                     file_id, caption)
+            log.info("[MEDIA] file_detected type=photo file_id=%.20s", file_id)
             return {
-                "file_id": file_id,
-                "attachment_type": "analysis_photo",
-                "caption": caption,
-                "mime_type": "image/jpeg",
+                "file_id":         file_id,
+                "attachment_type": "image",
+                "caption":         caption,
+                "mime_type":       "image/jpeg",
+                "file_name":       "photo.jpg",
             }
 
-    # --- document (file sent as document, including PDFs, PNGs sent uncompressed) ---
+    # --- document (any file sent as document) ---
     doc = tg_msg.get("document") or cd.get("document")
     if doc and isinstance(doc, dict):
         file_id   = doc.get("file_id", "")
         mime_type = doc.get("mime_type", "application/octet-stream")
         file_name = doc.get("file_name", "")
         if file_id:
-            atype = "document"
-            if mime_type.startswith("image/") or file_name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
-                atype = "analysis_photo"
-            elif mime_type == "application/pdf" or file_name.lower().endswith(".pdf"):
-                atype = "document"
-            log.info("[MEDIA] attachment_detected type=%s mime=%s file_id=%.20s",
-                     atype, mime_type, file_id)
+            fmt   = _detect_format(mime_type, file_name)
+            log.info("[MEDIA] file_detected type=%s mime=%s name=%s file_id=%.20s",
+                     fmt, mime_type, file_name, file_id)
             return {
-                "file_id": file_id,
-                "attachment_type": atype,
-                "caption": caption,
-                "mime_type": mime_type,
+                "file_id":         file_id,
+                "attachment_type": fmt,
+                "caption":         caption,
+                "mime_type":       mime_type,
+                "file_name":       file_name,
             }
 
     return None
@@ -122,11 +227,7 @@ def extract_attachment(body: dict) -> dict | None:
 # ─── Telegram File Download ───────────────────────────────────────────────────
 
 async def download_telegram_file(file_id: str) -> bytes | None:
-    """
-    Download a Telegram file by file_id using Bot API.
-    Returns raw bytes or None on failure.
-    Requires TELEGRAM_BOT_TOKEN env variable.
-    """
+    """Download a Telegram file by file_id. Returns raw bytes or None."""
     if not TELEGRAM_BOT_TOKEN:
         log.error("[MEDIA] TELEGRAM_BOT_TOKEN not set — cannot download file")
         return None
@@ -135,68 +236,203 @@ async def download_telegram_file(file_id: str) -> bytes | None:
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Step 1: get file path
             r = await client.get(f"{base}/getFile", params={"file_id": file_id})
             r.raise_for_status()
             data = r.json()
             if not data.get("ok"):
-                log.error("[MEDIA] getFile failed: %s", data)
+                log.error("[MEDIA] getFile API error: %s", data)
                 return None
             file_path = data["result"]["file_path"]
-
-            # Step 2: download actual file
-            file_url = _TELEGRAM_FILE_URL.format(token=TELEGRAM_BOT_TOKEN, file_path=file_path)
+            file_url  = _TELEGRAM_FILE_URL.format(
+                token=TELEGRAM_BOT_TOKEN, file_path=file_path
+            )
             r2 = await client.get(file_url)
             r2.raise_for_status()
-            file_bytes = r2.content
-            log.info("[MEDIA] file_downloaded file_id=%.20s size_bytes=%d", file_id, len(file_bytes))
-            return file_bytes
-
+            raw = r2.content
+            log.info("[MEDIA] file_downloaded bytes=%d file_path=%s", len(raw), file_path)
+            return raw
     except Exception as e:
         log.error("[MEDIA] download_telegram_file error: %s", e)
         return None
 
 
-# ─── OCR / Vision Extraction ──────────────────────────────────────────────────
+# ─── Format-specific Extractors ──────────────────────────────────────────────
 
-async def ocr_extract_text(file_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
-    """
-    Extract text from image/document bytes using OpenAI Vision.
-    Falls back to Claude Vision if OpenAI not available.
-
-    Returns:
-        {
-            "success": bool,
-            "text": str,          # extracted text
-            "confidence": str,    # "high" | "low" | "failed"
-            "provider": str,      # "openai" | "claude" | "none"
-            "error": str | None
-        }
-    """
-    log.info("[MEDIA] ocr_started mime=%s size=%d", mime_type, len(file_bytes))
-
-    if not file_bytes:
-        return {"success": False, "text": "", "confidence": "failed", "provider": "none",
-                "error": "empty file bytes"}
-
+async def _extract_image(file_bytes: bytes, mime_type: str) -> dict:
+    """Extract text from image bytes via Vision OCR."""
+    log.info("[MEDIA] extraction_started format=image size=%d", len(file_bytes))
     b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    # Try OpenAI Vision first
     if OPENAI_API_KEY:
         result = await _ocr_openai(b64, mime_type)
         if result["success"]:
+            log.info("[MEDIA] extraction_success format=image provider=openai len=%d",
+                     len(result["text"]))
             return result
 
-    # Fallback: Claude Vision
     if ANTHROPIC_API_KEY:
         result = await _ocr_claude(b64, mime_type)
         if result["success"]:
+            log.info("[MEDIA] extraction_success format=image provider=claude len=%d",
+                     len(result["text"]))
             return result
 
-    log.warning("[MEDIA] ocr_failure — no vision provider available")
+    log.warning("[MEDIA] extraction_failed format=image")
     return {"success": False, "text": "", "confidence": "failed",
-            "provider": "none", "error": "no vision provider configured"}
+            "provider": "none", "error": "all OCR providers failed"}
 
+
+async def _extract_pdf(file_bytes: bytes) -> dict:
+    """
+    Extract text from PDF.
+    Strategy: try pdfplumber for text PDF first; fall back to Vision OCR on pages.
+    """
+    log.info("[MEDIA] extraction_started format=pdf size=%d", len(file_bytes))
+
+    # Attempt 1: pdfplumber (text-based PDF)
+    try:
+        import pdfplumber
+        text_parts = []
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            page_count = len(pdf.pages)
+            pages_to_read = min(page_count, MAX_PDF_PAGES)
+            for i, page in enumerate(pdf.pages[:pages_to_read]):
+                page_text = page.extract_text()
+                if page_text:
+                    text_parts.append(f"[Page {i+1}]\n{page_text}")
+        combined = "\n\n".join(text_parts)[:MAX_EXTRACTED_LEN]
+        if len(combined) >= _MIN_OCR_TEXT_LEN:
+            log.info("[MEDIA] extraction_success format=pdf method=text pages=%d len=%d",
+                     pages_to_read, len(combined))
+            return {
+                "success": True, "text": combined, "confidence": "high",
+                "provider": "pdfplumber", "error": None,
+                "pages": pages_to_read,
+            }
+        log.info("[MEDIA] extraction_partial format=pdf method=text — no text layer, trying OCR")
+    except ImportError:
+        log.warning("[MEDIA] pdfplumber not available — skipping text extraction")
+    except Exception as e:
+        log.warning("[MEDIA] pdfplumber error: %s — trying OCR fallback", e)
+
+    # Attempt 2: Vision OCR on first pages (convert PDF pages to images)
+    try:
+        import pdfplumber
+        b64_pages = []
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            pages_to_ocr = min(len(pdf.pages), MAX_PDF_PAGES)
+            for i, page in enumerate(pdf.pages[:pages_to_ocr]):
+                # Render page as PNG image
+                img = page.to_image(resolution=150)
+                buf = io.BytesIO()
+                img.save(buf, format="PNG")
+                b64_pages.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
+
+        ocr_texts = []
+        for idx, b64 in enumerate(b64_pages):
+            if OPENAI_API_KEY:
+                res = await _ocr_openai(b64, "image/png")
+            elif ANTHROPIC_API_KEY:
+                res = await _ocr_claude(b64, "image/png")
+            else:
+                break
+            if res["success"]:
+                ocr_texts.append(f"[Page {idx+1}]\n{res['text']}")
+
+        if ocr_texts:
+            combined = "\n\n".join(ocr_texts)[:MAX_EXTRACTED_LEN]
+            log.info("[MEDIA] extraction_success format=pdf method=ocr pages=%d len=%d",
+                     len(ocr_texts), len(combined))
+            return {
+                "success": True, "text": combined, "confidence": "high",
+                "provider": "vision_ocr", "error": None,
+                "pages": len(ocr_texts),
+            }
+    except Exception as e:
+        log.warning("[MEDIA] PDF OCR fallback error: %s", e)
+
+    log.warning("[MEDIA] extraction_failed format=pdf")
+    return {"success": False, "text": "", "confidence": "failed",
+            "provider": "none", "error": "PDF extraction failed"}
+
+
+def _extract_docx(file_bytes: bytes) -> dict:
+    """Extract text from DOCX via python-docx."""
+    log.info("[MEDIA] extraction_started format=docx size=%d", len(file_bytes))
+    try:
+        import docx
+        doc = docx.Document(io.BytesIO(file_bytes))
+        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+        # Also extract table cells
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = " | ".join(
+                    cell.text.strip() for cell in row.cells if cell.text.strip()
+                )
+                if row_text:
+                    paragraphs.append(row_text)
+        combined = "\n".join(paragraphs)[:MAX_EXTRACTED_LEN]
+        if len(combined) >= _MIN_OCR_TEXT_LEN:
+            log.info("[MEDIA] extraction_success format=docx len=%d", len(combined))
+            return {"success": True, "text": combined, "confidence": "high",
+                    "provider": "python-docx", "error": None}
+        log.warning("[MEDIA] extraction_partial format=docx — document appears empty")
+        return {"success": False, "text": combined, "confidence": "low",
+                "provider": "python-docx", "error": "document appears empty"}
+    except ImportError:
+        log.warning("[MEDIA] python-docx not available")
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": "python-docx not installed"}
+    except Exception as e:
+        log.error("[MEDIA] extraction_failed format=docx error=%s", e)
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": str(e)}
+
+
+def _extract_text(file_bytes: bytes) -> dict:
+    """Extract text from TXT or CSV files."""
+    log.info("[MEDIA] extraction_started format=text size=%d", len(file_bytes))
+    try:
+        text = file_bytes.decode("utf-8", errors="replace")[:MAX_EXTRACTED_LEN]
+        log.info("[MEDIA] extraction_success format=text len=%d", len(text))
+        return {"success": True, "text": text, "confidence": "high",
+                "provider": "plaintext", "error": None}
+    except Exception as e:
+        log.error("[MEDIA] extraction_failed format=text error=%s", e)
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": str(e)}
+
+
+def _extract_spreadsheet(file_bytes: bytes, file_name: str = "") -> dict:
+    """Extract cell values from XLS/XLSX via openpyxl."""
+    log.info("[MEDIA] extraction_started format=spreadsheet size=%d", len(file_bytes))
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        rows_out = []
+        for sheet in wb.worksheets:
+            rows_out.append(f"[Sheet: {sheet.title}]")
+            for row in sheet.iter_rows(values_only=True):
+                row_text = " | ".join(str(c) for c in row if c is not None)
+                if row_text.strip():
+                    rows_out.append(row_text)
+            if len("\n".join(rows_out)) > MAX_EXTRACTED_LEN:
+                break
+        combined = "\n".join(rows_out)[:MAX_EXTRACTED_LEN]
+        log.info("[MEDIA] extraction_success format=spreadsheet len=%d", len(combined))
+        return {"success": True, "text": combined, "confidence": "high",
+                "provider": "openpyxl", "error": None}
+    except ImportError:
+        log.warning("[MEDIA] openpyxl not available")
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": "openpyxl not installed"}
+    except Exception as e:
+        log.error("[MEDIA] extraction_failed format=spreadsheet error=%s", e)
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": str(e)}
+
+
+# ─── Vision OCR Providers ─────────────────────────────────────────────────────
 
 async def _ocr_openai(b64: str, mime_type: str) -> dict:
     """OCR via OpenAI gpt-4o Vision."""
@@ -219,42 +455,39 @@ async def _ocr_openai(b64: str, mime_type: str) -> dict:
                     },
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{b64}"}
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{b64}",
+                            "detail": "high"
+                        }
                     }
                 ]
             }],
             max_tokens=2000,
         )
-        text = response.choices[0].message.content.strip()
-        confidence = "high" if len(text) >= _MIN_OCR_TEXT_LEN else "low"
-        log.info("[MEDIA] ocr_success provider=openai confidence=%s extracted_text_length=%d",
-                 confidence, len(text))
-        return {"success": True, "text": text, "confidence": confidence,
-                "provider": "openai", "error": None}
+        extracted = response.choices[0].message.content or ""
+        success   = len(extracted) >= _MIN_OCR_TEXT_LEN
+        confidence= "high" if success else "low"
+        log.info("[MEDIA] ocr_openai len=%d confidence=%s", len(extracted), confidence)
+        return {"success": success, "text": extracted[:MAX_EXTRACTED_LEN],
+                "confidence": confidence, "provider": "openai", "error": None}
     except Exception as e:
-        log.error("[MEDIA] ocr_failure provider=openai error=%s", e)
+        log.error("[MEDIA] ocr_openai error: %s", e)
         return {"success": False, "text": "", "confidence": "failed",
                 "provider": "openai", "error": str(e)}
 
 
 async def _ocr_claude(b64: str, mime_type: str) -> dict:
-    """OCR via Anthropic Claude Vision (claude-3-5-sonnet)."""
+    """OCR via Anthropic Claude Vision."""
     try:
         import anthropic
-        client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        # Claude Vision supports: image/jpeg, image/png, image/gif, image/webp
+        safe_mime = mime_type if mime_type in (
+            "image/jpeg", "image/png", "image/gif", "image/webp"
+        ) else "image/jpeg"
 
-        # Map mime_type to Anthropic media_type
-        media_map = {
-            "image/jpeg": "image/jpeg",
-            "image/jpg":  "image/jpeg",
-            "image/png":  "image/png",
-            "image/gif":  "image/gif",
-            "image/webp": "image/webp",
-        }
-        media_type = media_map.get(mime_type.lower(), "image/jpeg")
-
+        client   = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
         response = await client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-opus-4-5",
             max_tokens=2000,
             messages=[{
                 "role": "user",
@@ -263,158 +496,209 @@ async def _ocr_claude(b64: str, mime_type: str) -> dict:
                         "type": "image",
                         "source": {
                             "type": "base64",
-                            "media_type": media_type,
+                            "media_type": safe_mime,
                             "data": b64,
                         }
                     },
                     {
                         "type": "text",
                         "text": (
+                            "You are a medical data extraction assistant. "
                             "Extract ALL text visible in this image exactly as shown. "
                             "Preserve table structure where possible. "
                             "Output only the extracted text, no commentary."
                         )
                     }
                 ]
-            }],
+            }]
         )
-        text = response.content[0].text.strip()
-        confidence = "high" if len(text) >= _MIN_OCR_TEXT_LEN else "low"
-        log.info("[MEDIA] ocr_success provider=claude confidence=%s extracted_text_length=%d",
-                 confidence, len(text))
-        return {"success": True, "text": text, "confidence": confidence,
-                "provider": "claude", "error": None}
+        extracted = response.content[0].text if response.content else ""
+        success   = len(extracted) >= _MIN_OCR_TEXT_LEN
+        confidence= "high" if success else "low"
+        log.info("[MEDIA] ocr_claude len=%d confidence=%s", len(extracted), confidence)
+        return {"success": success, "text": extracted[:MAX_EXTRACTED_LEN],
+                "confidence": confidence, "provider": "claude", "error": None}
     except Exception as e:
-        log.error("[MEDIA] ocr_failure provider=claude error=%s", e)
+        log.error("[MEDIA] ocr_claude error: %s", e)
         return {"success": False, "text": "", "confidence": "failed",
                 "provider": "claude", "error": str(e)}
 
 
-# ─── Context Builder ──────────────────────────────────────────────────────────
+# ─── Unified Extraction Router ────────────────────────────────────────────────
+
+async def extract_content(file_bytes: bytes, fmt: str, mime_type: str,
+                          file_name: str = "") -> dict:
+    """
+    Route extraction to format-specific handler.
+    Always returns dict with: success, text, confidence, provider, error
+    """
+    if not file_bytes:
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": "empty file bytes"}
+
+    # Byte sniff if format still unknown
+    if fmt == "unknown":
+        sniffed = _byte_sniff_format(file_bytes)
+        if sniffed == "pdf":
+            fmt = "pdf"
+        elif sniffed == "image":
+            fmt = "image"
+
+    log.info("[MEDIA] file_type_detected format=%s mime=%s name=%s", fmt, mime_type, file_name)
+
+    if fmt == "image":
+        return await _extract_image(file_bytes, mime_type)
+
+    if fmt == "pdf":
+        return await _extract_pdf(file_bytes)
+
+    if fmt == "docx":
+        return _extract_docx(file_bytes)
+
+    if fmt == "text":
+        return _extract_text(file_bytes)
+
+    if fmt == "spreadsheet":
+        return _extract_spreadsheet(file_bytes, file_name)
+
+    if fmt == "doc":
+        log.warning("[MEDIA] unsupported_file_type format=doc")
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": "legacy DOC format",
+                "user_message": DOC_LEGACY_MESSAGE}
+
+    if fmt == "zip":
+        log.warning("[MEDIA] unsupported_file_type format=zip")
+        return {"success": False, "text": "", "confidence": "failed",
+                "provider": "none", "error": "ZIP archive",
+                "user_message": ZIP_MESSAGE}
+
+    log.warning("[MEDIA] unsupported_file_type format=%s", fmt)
+    return {"success": False, "text": "", "confidence": "failed",
+            "provider": "none", "error": f"unsupported format: {fmt}",
+            "user_message": UNSUPPORTED_FORMAT_MESSAGE}
+
+
+# ─── Unified Attachment Context Builder ──────────────────────────────────────
 
 def build_attachment_context(attachment_meta: dict, ocr_result: dict) -> str:
     """
     Build a structured context string injected into the AI prompt.
-    This replaces the empty/missing text so the AI pipeline never sees a blank message.
 
-    Returns a string like:
+    Returns:
         [ATTACHMENT_CONTEXT]
         HAS_ATTACHMENTS = true
-        ATTACHMENT_TYPE = analysis_photo
+        ATTACHMENT_TYPE = pdf
+        FILE_NAME = analysis_2024.pdf
+        MIME_TYPE = application/pdf
         FILES_COUNT = 1
+        EXTRACTION_STATUS = success
         OCR_CONFIDENCE = high
         EXTRACTED_TEXT:
-        <text from OCR>
+        ...
         [/ATTACHMENT_CONTEXT]
     """
-    atype    = attachment_meta.get("attachment_type", "unknown")
-    caption  = attachment_meta.get("caption", "")
-    ocr_text = ocr_result.get("text", "")
-    conf     = ocr_result.get("confidence", "failed")
-    success  = ocr_result.get("success", False)
+    fmt       = attachment_meta.get("attachment_type", "unknown")
+    file_name = attachment_meta.get("file_name", "")
+    mime_type = attachment_meta.get("mime_type", "")
+    caption   = attachment_meta.get("caption", "")
+    ocr_text  = ocr_result.get("text", "")
+    conf      = ocr_result.get("confidence", "failed")
+    success   = ocr_result.get("success", False)
+    status    = "success" if success else ("partial" if ocr_text else "failed")
 
     lines = [
         "[ATTACHMENT_CONTEXT]",
         "HAS_ATTACHMENTS = true",
-        f"ATTACHMENT_TYPE = {atype}",
+        f"ATTACHMENT_TYPE = {fmt}",
+    ]
+    if file_name:
+        lines.append(f"FILE_NAME = {file_name}")
+    if mime_type:
+        lines.append(f"MIME_TYPE = {mime_type}")
+    lines += [
         "FILES_COUNT = 1",
+        f"EXTRACTION_STATUS = {status}",
         f"OCR_CONFIDENCE = {conf}",
     ]
     if caption:
         lines.append(f"CAPTION = {caption}")
-    if success and ocr_text:
-        lines.append("EXTRACTED_TEXT:")
-        lines.append(ocr_text)
+    if ocr_text:
+        lines += ["EXTRACTED_TEXT:", ocr_text]
     else:
-        lines.append("EXTRACTED_TEXT: [OCR_FAILED_OR_EMPTY]")
+        lines.append("EXTRACTED_TEXT: [extraction failed or empty]")
     lines.append("[/ATTACHMENT_CONTEXT]")
-
     return "\n".join(lines)
 
 
-# ─── Failsafe Response ────────────────────────────────────────────────────────
-
-OCR_FAILSAFE_MESSAGE = (
-    "Файл получен, но мне не удалось полностью распознать данные. "
-    "Попробуйте отправить фото чуть ближе или более чётко."
-)
-
-ANALYSIS_COLLECTION_ACK = (
-    "Спасибо, я получил ваш файл с анализами. "
-    "Обрабатываю данные — это займёт несколько секунд."
-)
-
-
-# ─── Top-Level Handler ────────────────────────────────────────────────────────
+# ─── Main Entry Point ─────────────────────────────────────────────────────────
 
 async def process_attachment_message(
     contact_id: str,
     attachment_meta: dict,
-    process_message_fn,         # callable: process_message(contact_id, text)
-    session_update_fn = None,   # optional: callable(contact_id, ocr_result, attachment_meta) -> None
+    process_message_fn,
+    session_update_fn=None,
 ) -> str:
     """
-    Full attachment handling pipeline:
-    1. Download file from Telegram
-    2. Run OCR
-    3. Build context string
-    4. Switch session into ANALYSIS_COLLECTION_MODE
-    5. Call process_message with enriched text
+    Universal attachment handler. Called from main.py webhook for any attachment.
 
-    Returns the final AI reply string.
+    Steps:
+    1. Safety check (file size)
+    2. Download file bytes
+    3. Route to format-specific extractor
+    4. Build ATTACHMENT_CONTEXT
+    5. Optionally update session (analysis_module)
+    6. Call process_message_fn with enriched context
     """
     file_id   = attachment_meta.get("file_id", "")
-    atype     = attachment_meta.get("attachment_type", "unknown")
+    fmt       = attachment_meta.get("attachment_type", "unknown")
+    mime_type = attachment_meta.get("mime_type", "application/octet-stream")
+    file_name = attachment_meta.get("file_name", "")
     caption   = attachment_meta.get("caption", "")
-    mime_type = attachment_meta.get("mime_type", "image/jpeg")
 
     log.info("[MEDIA] escalation_triggered contact=%s type=%s file_id=%.20s",
-             contact_id, atype, file_id)
+             contact_id, fmt, file_id)
 
     # Step 1: Download
     file_bytes = await download_telegram_file(file_id)
-
     if not file_bytes:
-        # Can't download — return failsafe
-        log.warning("[MEDIA] download_failed contact=%s — returning failsafe", contact_id)
+        log.error("[MEDIA] extraction_failed — could not download file contact=%s", contact_id)
         return OCR_FAILSAFE_MESSAGE
 
-    # Step 2: OCR
-    ocr_result = await ocr_extract_text(file_bytes, mime_type)
+    # Safety: file size limit
+    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
+        log.warning("[MEDIA] file_size_rejected contact=%s size=%d", contact_id, len(file_bytes))
+        return FILE_TOO_LARGE_MESSAGE
 
-    # Step 3: Build context
+    # Step 2: Extract content
+    ocr_result = await extract_content(file_bytes, fmt, mime_type, file_name)
+
+    # Handle user_message overrides for unsupported types
+    if not ocr_result["success"] and ocr_result.get("user_message"):
+        return ocr_result["user_message"]
+
+    # Step 3: Build context block
     ctx_str = build_attachment_context(attachment_meta, ocr_result)
 
-    # Step 3b: Update session with analysis metadata (if session_update_fn provided)
+    # Step 4: Update session if callback provided
     if session_update_fn is not None:
         try:
             session_update_fn(contact_id, ocr_result, attachment_meta)
-            log.info("[MEDIA] session_updated via session_update_fn contact=%s", contact_id)
-        except Exception as _suf_err:
-            log.warning("[MEDIA] session_update_fn error: %s", _suf_err)
+        except Exception as e:
+            log.error("[MEDIA] session_update_fn error: %s", e)
 
-    # Determine synthetic user message
+    # Step 5: Determine synthetic user message
     if ocr_result["success"] and len(ocr_result["text"]) >= _MIN_OCR_TEXT_LEN:
-        # Pass OCR text as the user message so the full pipeline can process it
         synthetic_msg = ctx_str
         if caption:
             synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
     elif caption:
-        # No good OCR, but caption exists — use caption + partial context
         synthetic_msg = f"[CAPTION: {caption}]\n" + ctx_str
     else:
-        # OCR failed, no caption — use failsafe
         log.warning("[MEDIA] ocr_confidence_low contact=%s — returning failsafe", contact_id)
         return OCR_FAILSAFE_MESSAGE
 
-    # Step 4: Save analysis metadata to session via analysis_module
-    # We need to get the session from process_message_fn's closure if possible
-    # Since we can't access session directly here, we pass a synthetic "receipt" message
-    # that contains structured context the analysis_module-aware process_message will handle
-    # The structured context is already in synthetic_msg as [ATTACHMENT_CONTEXT]
-    # analysis_module.save_analysis_to_session is called inside agents.py when analysis route detected
-
-    # Step 5: Call existing process_message pipeline with enriched context
+    # Step 6: Call AI pipeline
     try:
         reply = process_message_fn(contact_id, synthetic_msg)
     except Exception as e:
@@ -424,7 +708,7 @@ async def process_attachment_message(
     return reply
 
 
-# ─── Utility: detect if update has attachment (used in main.py webhook) ───────
+# ─── Utility ──────────────────────────────────────────────────────────────────
 
 def has_attachment(body: dict) -> bool:
     """Fast check: does this webhook body contain a media attachment?"""
