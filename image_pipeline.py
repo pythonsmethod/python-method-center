@@ -47,7 +47,6 @@ from analysis_module import (
 )
 
 log = logging.getLogger("image_pipeline")
-log.info("[PIPELINE_BOOT] image_pipeline loaded version=%s", APP_VERSION)
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("NOTIFY_BOT_TOKEN", "")
@@ -73,9 +72,10 @@ _OCR_MEDIUM_MIN     = 40    # chars for unconditional medium confidence
 _OCR_MEDICAL_HIGH   = 40    # chars + medical heuristic → high
 _OCR_MEDICAL_MEDIUM = 10    # chars + medical heuristic → medium
 
-# ─── User-facing messages (Russian) ──────────────────────────────────────────
 APP_VERSION = "a2c94e8-canary-v3"   # deployment fingerprint
+log.info("[PIPELINE_BOOT] image_pipeline loaded version=%s", APP_VERSION)
 
+# ─── User-facing messages (Russian) ──────────────────────────────────────────
 OCR_FAILSAFE_MESSAGE = (
     "[DEBUG_FAILSAFE_V3] Файл получен. OCR не сработал — нужно чётче. "
     "Пожалуйста, отправьте фото ближе или в формате PDF/Word."
