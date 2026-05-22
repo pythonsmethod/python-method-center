@@ -224,6 +224,9 @@ def detect_intent(user_message: str, session: dict, context: dict) -> str:
     """
     if not user_message:
         return 'question'
+    # Phase 5: detect attachment context message from image_pipeline
+    if '[ATTACHMENT_CONTEXT]' in user_message and 'HAS_ATTACHMENTS = true' in user_message:
+        return 'analysis_upload'
 
     msg = user_message.lower().strip()
     route = context.get('route', 'reception')
@@ -350,8 +353,10 @@ def detect_user_state(
             return 'confused'
         if intent == 'waiting':
             return 'waiting'
-        if intent in ('onboarding', 'analysis_upload'):
+        if intent == 'onboarding':
             return 'onboarding'
+        if intent == 'analysis_upload':
+            return 'analysis_received'  # Phase 5: analysis gets dedicated state
         if intent == 'support':
             return 'support'
         # Phase 5/Step 6: check-in state mapping
@@ -366,6 +371,8 @@ def detect_user_state(
         return 'anxious'
 
     # 6. Route-based soft states
+    if route in ('analysis_route', 'analysis'):
+        return 'analysis_received'  # Phase 5: analysis route always maps to analysis_received
     if route in ('formula', 'tariff_recommend'):
         return 'choosing'
     if route in ('faq', 'prevention'):
