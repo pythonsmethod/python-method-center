@@ -12,6 +12,12 @@ from central_ai_core import build_context_package
 from state_engine import analyze as state_analyze
 from route_resolver import resolve_route
 from checkin_module import detect_checkin_intent, update_checkin_fields, get_checkin_response_template, build_checkin_prompt_prefix
+from analysis_module import (
+    save_analysis_to_session, evaluate_escalation, check_analysis_completeness,
+    get_receipt_confirmation, get_return_flow_message, guard_medical_interpretation,
+    enter_waiting_state, has_analysis_uploaded, is_in_analysis_route,
+    log_missing_analysis_request, MEDICAL_GUARD,
+)
 from testimonials_module import detect_testimonial_worthy, save_testimonial, CONSENT_PROMPT
 from auto_router import apply_auto_route
 from emotional_overlay import (
@@ -560,7 +566,8 @@ AGENT_PROMPTS = {
     'individual': HANNAH_PROMPT,
     'formula':    MAYA_PROMPT,
     'onboarding': IRIS_PROMPT,
-    'analysis':   VERA_PROMPT,
+    'analysis':       VERA_PROMPT,
+    'analysis_route': VERA_PROMPT,  # Phase 5
     'support':    NADIA_PROMPT,
     'escalation': ESCALATION_PROMPT,
     'tariff_recommend': TARIFF_LUCKY_PROMPT,
@@ -852,7 +859,17 @@ def process_message(contact_id, user_message):
         _checkin_prefix = ''
     # ─────────────────────────────────────────────────────────────────────
 
-    # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
+    # Phase 5: Analysis route continuity — inject return flow message for returning users
+    if current_route in ('analysis_route', 'analysis') and has_analysis_uploaded(session):
+        _analysis_return_msg = get_return_flow_message(session)
+        if _analysis_return_msg and not session.get('_analysis_return_msg_sent'):
+            session['history'].append({'role': 'assistant', 'content': _analysis_return_msg})
+            session['_analysis_return_msg_sent'] = True
+            save_session(str(contact_id), session)
+            log.info('[ANALYSIS] waiting_state_started contact=%s msg=%.80s', contact_id, _analysis_return_msg)
+            return _analysis_return_msg
+
+        # НОВОЕ: если ждём подтверждения — обрабатываем отдельно
     if session.get('awaiting_confirmation'):
         session['history'].append({'role': 'user', 'content': user_message})
         return handle_confirmation(contact_id, session, user_message)
@@ -861,6 +878,12 @@ def process_message(contact_id, user_message):
 
     current_route = session['route']
     prompt = AGENT_PROMPTS.get(current_route, LUCKY_PROMPT)
+
+    # Phase 5: Analysis route — prepend medical interpretation guard
+    if current_route in ('analysis_route', 'analysis'):
+        prompt = guard_medical_interpretation(prompt)
+        log.info('[ANALYSIS] analysis_route_entered route=%s stage=%s',
+                 current_route, session.get('analysis_stage', 'unknown'))
 
     # Phase 5/Step 6: prepend check-in template prefix (if active)
     try:
@@ -1046,6 +1069,42 @@ def send_karen_paid_notification(number, telegram_id, name, country, tariff, sum
         })
     except Exception as e:
         print(f'[NOTIFY ERROR] {e}')
+
+
+
+# ─── Phase 5: Analysis Session Update Fn (called from image_pipeline) ───────
+def update_session_from_analysis(contact_id: str, ocr_result: dict, attachment_meta: dict) -> None:
+    """
+    Called by image_pipeline.process_attachment_message via session_update_fn callback.
+    Saves analysis metadata into session using analysis_module.
+    Exported for use in main.py webhook call.
+    """
+    try:
+        session = get_session(contact_id)
+        escalation = evaluate_escalation(
+            ocr_text        = ocr_result.get('text', ''),
+            attachment_type = attachment_meta.get('attachment_type', 'unknown'),
+            ocr_confidence  = ocr_result.get('confidence', 'failed'),
+            pages_count     = attachment_meta.get('pages_count', 1),
+        )
+        completeness = check_analysis_completeness(ocr_result.get('text', ''), session)
+        save_analysis_to_session(session, attachment_meta, ocr_result, escalation, completeness)
+        # Transition to waiting state
+        enter_waiting_state(session, str(contact_id))
+        # Persist missing items log
+        if completeness.get('missing_items'):
+            log_missing_analysis_request(completeness['missing_items'], str(contact_id))
+        save_session(str(contact_id), session)
+        import logging as _alog
+        _alog.getLogger('analysis_module').info(
+            '[ANALYSIS] analysis_saved via update_session_from_analysis contact=%s stage=%s',
+            contact_id, session.get('analysis_stage')
+        )
+    except Exception as e:
+        import logging as _alog
+        _alog.getLogger('analysis_module').error(
+            '[ANALYSIS] update_session_from_analysis error: %s', e
+        )
 
 
 def on_payment_confirmed(contact_id, telegram_id, name, tariff):
