@@ -11,6 +11,7 @@ import httpx
 
 from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions
 from ai_router import health_check as ai_health_check, ask_claude
+from image_pipeline import extract_attachment, has_attachment, process_attachment_message
 
 logging.basicConfig(
     level=logging.INFO,
@@ -187,10 +188,11 @@ def extract_event(body):
     if isinstance(body, list):
         body = body[0] if body else {}
     if not isinstance(body, dict):
-        return None, None
+        return None, None, None
 
     contact_id = None
     text = None
+    attachment = extract_attachment(body)  # Phase 4: media pipeline
 
     info = body.get("info") or {}
     if not isinstance(info, dict):
@@ -219,7 +221,7 @@ def extract_event(body):
         if isinstance(m, dict):
             text = (m.get("text") or "").strip()
 
-    return contact_id, text
+    return contact_id, text, attachment
 
 
 # ============================================================
@@ -236,10 +238,20 @@ async def webhook(request: Request):
     global _RT_WEBHOOKS
     _RT_WEBHOOKS += 1
     log.info(f"Webhook received: {str(body)[:300]}")
-    contact_id, text = extract_event(body)
+    contact_id, text, attachment = extract_event(body)
 
-    if not contact_id or not text:
-        log.info(f"Ignoring - contact_id={contact_id}, text={text}")
+    # Phase 4: handle attachment-only messages (no text guard)
+    if not contact_id:
+        log.info(f"Ignoring - no contact_id")
+        return JSONResponse({"status": "ignored"})
+    if not text and attachment:
+        log.info(f"[{contact_id}] -> attachment-only message, routing to image pipeline")
+        reply = await process_attachment_message(contact_id, attachment, process_message)
+        log.info(f"[{contact_id}] <- (attachment reply) {str(reply)[:100]}")
+        await send_message(contact_id, reply)
+        return JSONResponse({"status": "ok"})
+    if not text:
+        log.info(f"Ignoring - contact_id={contact_id}, text={text}, no attachment")
         return JSONResponse({"status": "ignored"})
 
     log.info(f"[{contact_id}] -> {text[:100]}")
