@@ -7,6 +7,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from normalization_module import normalize_ocr_result
 
 log = logging.getLogger('analysis_module')
 
@@ -157,6 +158,20 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
     ocr_text = ocr_result.get('text', '')
     ocr_confidence = ocr_result.get('confidence', 'failed')
     ocr_success = ocr_result.get('success', False)
+
+    # Phase 5.1: Canonical normalization — deterministic, no AI, no diagnosis
+    try:
+        source_upload_id = (
+            attachment_meta.get('file_id', '') or
+            attachment_meta.get('file_name', '') or
+            datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')
+        )
+        ocr_result = normalize_ocr_result(ocr_result, source_upload_id=source_upload_id)
+        _norm = ocr_result.get('normalized', {})
+        log.info('[ANALYSIS] normalization_complete upload_id=%s biomarkers=%d ok=%s',
+                 source_upload_id, _norm.get('biomarker_count', 0), _norm.get('normalization_ok'))
+    except Exception as _norm_err:
+        log.warning('[ANALYSIS] normalization_skipped err=%s', _norm_err)
     attachment_type = attachment_meta.get('attachment_type', 'unknown')
     pages_count = attachment_meta.get('pages_count', 1)
 
@@ -176,6 +191,9 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
     cs.update({
         'analysis_received_at':    cs.get('analysis_received_at') or now_iso,
         'analysis_last_upload_at': now_iso,
+        'normalized_biomarkers':   ocr_result.get('normalized', {}).get('biomarkers', []),
+        'normalized_upload_date':  ocr_result.get('normalized', {}).get('upload_date'),
+        'normalization_version':   ocr_result.get('normalized', {}).get('version'),
         'analysis_ocr_status':     'success' if ocr_success else 'failed',
         'analysis_ocr_confidence': ocr_confidence,
         'analysis_pages_count':    pages_count,
