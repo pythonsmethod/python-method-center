@@ -7,7 +7,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from normalization_module import normalize_ocr_result
+from normalization_module import normalize_ocr_result, build_chronology
 
 log = logging.getLogger('analysis_module')
 
@@ -205,6 +205,31 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
         'analysis_ocr_text_snippet': ocr_text[:500] if ocr_text else '',
     })
     session['continuity_state'] = cs
+
+    # Phase 5.1 Step 2: Chronology merge — accumulate uploads history and build timeline
+    try:
+        _existing_history = cs.get('normalized_biomarkers_history', [])
+        _current_biomarkers = ocr_result.get('normalized', {}).get('biomarkers', [])
+        if _current_biomarkers:
+            _existing_history = list(_existing_history) + [_current_biomarkers]
+        cs['normalized_biomarkers_history'] = _existing_history
+
+        _chronology = build_chronology(_existing_history)
+        cs['analysis_chronology'] = _chronology
+        cs['chronology_version'] = _chronology.get('chronology_version', '')
+        cs['reconciled_biomarkers'] = [
+            b
+            for date_entry in _chronology.get('dates', [])
+            for b in date_entry.get('biomarkers', [])
+        ]
+        cs['repeated_biomarkers'] = _chronology.get('repeated_biomarkers', {})
+        session['continuity_state'] = cs
+        log.info('[CHRONOLOGY] chronology_merged dates=%d biomarkers=%d repeated=%d',
+                 len(_chronology.get('dates', [])),
+                 _chronology.get('biomarkers_count', 0),
+                 len(_chronology.get('repeated_biomarkers', {})))
+    except Exception as _chron_err:
+        log.warning('[CHRONOLOGY] chronology_merge_failed: %s', _chron_err)
 
     session['route'] = 'analysis_route'
     session['current_intent'] = 'analysis_upload'
