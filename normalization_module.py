@@ -994,3 +994,255 @@ def build_chronology(
         log.error('[CHRONOLOGY] build_chronology failed: %s', e, exc_info=True)
 
     return chronology
+
+
+# ============================================================
+# DOSSIER VERSION
+# ============================================================
+DOSSIER_VERSION = '5.1.3'
+
+# ============================================================
+# KAREN EXPERT DOSSIER ASSEMBLY — Phase 5.1 Step 3
+# Assembles a structured handoff packet for Karen from existing
+# normalized and chronology data stored in continuity_state.
+#
+# NOT medical advice. NOT diagnosis. NOT treatment logic.
+# Pure deterministic structural assembly from existing fields.
+# ============================================================
+
+# Patient context keys expected in continuity_state
+_PATIENT_CONTEXT_KEYS = [
+    'contact_name',
+    'contact_age',
+    'contact_phone',
+    'analysis_received_at',
+    'analysis_last_upload_at',
+    'analysis_escalation_reason',
+    'analysis_escalation_priority',
+    'analysis_ocr_status',
+    'analysis_ocr_confidence',
+    'analysis_attachment_type',
+    'analysis_pages_count',
+]
+
+# Escalation-compatible route/stage values
+_ESCALATION_COMPATIBLE_ROUTES = {
+    'analysis_route', 'analysis', 'analysis_received',
+    'analysis_waiting', 'analysis_escalated',
+}
+_ESCALATION_COMPATIBLE_STAGES = {
+    'analysis_received', 'analysis_waiting',
+    'analysis_escalated', 'analysis_incomplete',
+}
+
+
+def build_karen_dossier(
+    continuity_state: Dict[str, Any],
+    session: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Build a structured expert-ready handoff packet for Karen.
+
+    Input:
+        continuity_state: the cs dict from session (already has normalized data from Steps 1+2)
+        session: optional full session dict for route/stage lookup
+
+    Output schema:
+    {
+        "dossier_version": str,
+        "created_at": str (ISO),
+        "case_status": str,
+        "route": str | None,
+        "stage": str | None,
+        "patient_context": {
+            "known_fields": {key: value},
+            "missing_fields": [key, ...]
+        },
+        "upload_summary": {
+            "uploads_count": int,
+            "dated_uploads": int,
+            "undated_uploads": int,
+            "low_confidence_count": int
+        },
+        "analysis_summary": {
+            "biomarkers_total": int,
+            "unique_biomarkers": int,
+            "dates_covered": [str, ...],
+            "repeated_biomarkers": [str, ...]
+        },
+        "chronology": [...],
+        "repeated_biomarkers": {...},
+        "low_confidence_items": [...],
+        "missing_dates": [...],
+        "handoff_notes": {
+            "ready_for_karen": bool,
+            "blocking_gaps": [str, ...],
+            "safe_escalation_reason": str
+        }
+    }
+
+    SAFE: never raises. Failures are logged, empty skeleton returned.
+    NOT diagnosis. NOT medical interpretation. NOT treatment advice.
+    """
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    dossier: Dict[str, Any] = {
+        'dossier_version': DOSSIER_VERSION,
+        'created_at': created_at,
+        'case_status': 'assembled',
+        'route': None,
+        'stage': None,
+        'patient_context': {'known_fields': {}, 'missing_fields': []},
+        'upload_summary': {
+            'uploads_count': 0,
+            'dated_uploads': 0,
+            'undated_uploads': 0,
+            'low_confidence_count': 0,
+        },
+        'analysis_summary': {
+            'biomarkers_total': 0,
+            'unique_biomarkers': 0,
+            'dates_covered': [],
+            'repeated_biomarkers': [],
+        },
+        'chronology': [],
+        'repeated_biomarkers': {},
+        'low_confidence_items': [],
+        'missing_dates': [],
+        'handoff_notes': {
+            'ready_for_karen': False,
+            'blocking_gaps': [],
+            'safe_escalation_reason': '',
+        },
+    }
+
+    try:
+        cs = continuity_state or {}
+        sess = session or {}
+
+        # ── Route and stage ──
+        route = sess.get('route') or cs.get('route')
+        stage = sess.get('analysis_stage') or cs.get('analysis_stage')
+        dossier['route'] = route
+        dossier['stage'] = stage
+
+        # ── Patient context ──
+        known: Dict[str, Any] = {}
+        missing: list = []
+        for key in _PATIENT_CONTEXT_KEYS:
+            val = cs.get(key)
+            if val is not None and val != '' and val != []:
+                known[key] = val
+            else:
+                missing.append(key)
+        dossier['patient_context'] = {
+            'known_fields': known,
+            'missing_fields': missing,
+        }
+
+        # ── Chronology data (from Step 2) ──
+        chronology = cs.get('analysis_chronology') or {}
+        dates_list = chronology.get('dates') or []
+        repeated_bio = chronology.get('repeated_biomarkers') or {}
+        low_conf = chronology.get('low_confidence_items') or []
+        missing_dates_list = chronology.get('missing_dates') or []
+        uploads_count = chronology.get('uploads_count', 0)
+        biomarkers_count = chronology.get('biomarkers_count', 0)
+
+        # ── Upload summary ──
+        dated_uploads = len([d for d in dates_list if d.get('date') is not None])
+        undated_uploads = len([d for d in dates_list if d.get('date') is None])
+        dossier['upload_summary'] = {
+            'uploads_count': uploads_count,
+            'dated_uploads': dated_uploads,
+            'undated_uploads': undated_uploads,
+            'low_confidence_count': len(low_conf),
+        }
+
+        # ── Analysis summary ──
+        reconciled = cs.get('reconciled_biomarkers') or []
+        unique_names = list({b.get('canonical_name') for b in reconciled if b.get('canonical_name')})
+        dates_covered = sorted([
+            d['date'] for d in dates_list if d.get('date')
+        ])
+        dossier['analysis_summary'] = {
+            'biomarkers_total': biomarkers_count,
+            'unique_biomarkers': len(unique_names),
+            'dates_covered': dates_covered,
+            'repeated_biomarkers': list(repeated_bio.keys()),
+        }
+
+        # ── Full chronology passthrough ──
+        dossier['chronology'] = dates_list
+        dossier['repeated_biomarkers'] = repeated_bio
+        dossier['low_confidence_items'] = low_conf
+        dossier['missing_dates'] = missing_dates_list
+
+        # ── Handoff readiness logic (deterministic) ──
+        blocking_gaps: list = []
+
+        has_biomarkers = len(reconciled) > 0 or biomarkers_count > 0
+        has_chronology = bool(chronology)
+        normalization_ok = cs.get('normalization_version') is not None
+        ocr_ok = cs.get('analysis_ocr_status') == 'success'
+        route_ok = (route in _ESCALATION_COMPATIBLE_ROUTES or
+                    stage in _ESCALATION_COMPATIBLE_STAGES)
+
+        if not has_biomarkers:
+            blocking_gaps.append('no_biomarkers_extracted')
+        if not has_chronology:
+            blocking_gaps.append('no_chronology_available')
+        if not normalization_ok:
+            blocking_gaps.append('normalization_not_completed')
+        if not ocr_ok:
+            blocking_gaps.append('ocr_failed_or_not_run')
+        if not route_ok:
+            blocking_gaps.append('route_or_stage_not_escalation_compatible')
+        if len(missing_dates_list) > 0 and uploads_count > 0 and dated_uploads == 0:
+            blocking_gaps.append('all_uploads_missing_dates')
+
+        ready = len(blocking_gaps) == 0
+
+        # Build a neutral operational escalation reason (no diagnosis)
+        if ready:
+            date_range = ''
+            if dates_covered:
+                if len(dates_covered) == 1:
+                    date_range = f'dated {dates_covered[0]}'
+                else:
+                    date_range = f'from {dates_covered[0]} to {dates_covered[-1]}'
+            escalation_reason = (
+                f'Analysis upload complete. '
+                f'{len(unique_names)} biomarker type(s) normalized across '
+                f'{len(dates_covered)} date period(s) {date_range}. '
+                f'Chronology assembled. Ready for expert review.'
+            )
+        else:
+            escalation_reason = (
+                'Dossier not ready for handoff. Gaps: ' + ', '.join(blocking_gaps) + '.'
+            )
+
+        dossier['handoff_notes'] = {
+            'ready_for_karen': ready,
+            'blocking_gaps': blocking_gaps,
+            'safe_escalation_reason': escalation_reason,
+        }
+        dossier['case_status'] = 'ready' if ready else 'incomplete'
+
+        log.info(
+            '[DOSSIER] build_karen_dossier complete '
+            'ready=%s biomarkers=%d unique=%d dates=%d gaps=%d',
+            ready,
+            biomarkers_count,
+            len(unique_names),
+            len(dates_covered),
+            len(blocking_gaps),
+        )
+
+    except Exception as e:
+        log.error('[DOSSIER] build_karen_dossier failed: %s', e, exc_info=True)
+        dossier['case_status'] = 'assembly_error'
+        dossier['handoff_notes']['blocking_gaps'] = ['dossier_assembly_exception']
+        dossier['handoff_notes']['safe_escalation_reason'] = 'Dossier assembly failed internally.'
+
+    return dossier
