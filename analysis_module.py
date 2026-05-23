@@ -7,7 +7,7 @@
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from normalization_module import normalize_ocr_result, build_chronology
+from normalization_module import normalize_ocr_result, build_chronology, build_karen_dossier
 
 log = logging.getLogger('analysis_module')
 
@@ -230,6 +230,21 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
                  len(_chronology.get('repeated_biomarkers', {})))
     except Exception as _chron_err:
         log.warning('[CHRONOLOGY] chronology_merge_failed: %s', _chron_err)
+
+    # Phase 5.1 Step 3: Karen expert dossier assembly — deterministic, no diagnosis, no AI
+    try:
+        _dossier = build_karen_dossier(cs, session=session)
+        cs['karen_expert_dossier'] = _dossier
+        cs['dossier_version'] = _dossier.get('dossier_version', '')
+        cs['dossier_ready_for_karen'] = _dossier.get('handoff_notes', {}).get('ready_for_karen', False)
+        session['continuity_state'] = cs
+        log.info('[DOSSIER] dossier_assembled ready=%s gaps=%s',
+                 cs['dossier_ready_for_karen'],
+                 _dossier.get('handoff_notes', {}).get('blocking_gaps', []))
+    except Exception as _dossier_err:
+        log.warning('[DOSSIER] dossier_assembly_failed: %s', _dossier_err)
+
+
 
     session['route'] = 'analysis_route'
     session['current_intent'] = 'analysis_upload'
