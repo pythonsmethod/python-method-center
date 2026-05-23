@@ -117,6 +117,141 @@ def get_return_flow_message(session: dict) -> str:
         return get_missing_analysis_request(missing)
     return ""
 
+
+
+# ============================================================
+# DOSSIER-AWARE ESCALATION — Phase 5.1 Step 4
+# Deterministic. No diagnosis. No medical interpretation.
+# Reads existing dossier fields to gate escalation safely.
+# ============================================================
+
+# Escalation verdict constants
+ESCALATION_VERDICT_READY      = 'READY_FOR_KAREN'
+ESCALATION_VERDICT_INCOMPLETE = 'INCOMPLETE_CASE'
+ESCALATION_VERDICT_RETRY      = 'NEEDS_UPLOAD_RETRY'
+
+# Blocking gaps that indicate a corrupted/unreadable upload (retry needed)
+_RETRY_GAPS = {
+    'ocr_failed_or_not_run',
+    'no_biomarkers_extracted',
+    'normalization_not_completed',
+}
+
+# Blocking gaps that indicate missing data but upload was valid (keep in flow)
+_INCOMPLETE_GAPS = {
+    'no_chronology_available',
+    'route_or_stage_not_escalation_compatible',
+    'all_uploads_missing_dates',
+}
+
+
+def dossier_escalation_check(cs: dict) -> dict:
+    """
+    Determine safe escalation verdict from dossier readiness data.
+
+    Input: continuity_state dict (after dossier assembly).
+    Output: {
+        "verdict": str,           # READY_FOR_KAREN | INCOMPLETE_CASE | NEEDS_UPLOAD_RETRY
+        "reason": str,            # human-readable operational note
+        "blocking_gaps": [str],   # list of gap keys from dossier
+    }
+
+    SAFE: never raises. Defaults to INCOMPLETE_CASE on error.
+    Deterministic. No AI. No medical interpretation.
+    """
+    result = {
+        'verdict': ESCALATION_VERDICT_INCOMPLETE,
+        'reason': 'default_incomplete',
+        'blocking_gaps': [],
+    }
+    try:
+        dossier = cs.get('karen_expert_dossier') or {}
+        handoff = dossier.get('handoff_notes') or {}
+        ready = handoff.get('ready_for_karen', False)
+        blocking_gaps = handoff.get('blocking_gaps') or []
+        result['blocking_gaps'] = blocking_gaps
+
+        if ready:
+            result['verdict'] = ESCALATION_VERDICT_READY
+            result['reason'] = handoff.get('safe_escalation_reason', 'dossier_ready')
+            log.info('[DOSSIER] dossier_ready contact escalation_verdict=READY_FOR_KAREN gaps=0')
+            return result
+
+        # Classify gap type
+        gap_set = set(blocking_gaps)
+        is_retry = bool(gap_set & _RETRY_GAPS)
+        is_incomplete = bool(gap_set & _INCOMPLETE_GAPS)
+
+        if is_retry:
+            result['verdict'] = ESCALATION_VERDICT_RETRY
+            result['reason'] = 'upload_requires_retry: ' + ', '.join(gap_set & _RETRY_GAPS)
+            log.info('[DOSSIER] dossier_blocked verdict=NEEDS_UPLOAD_RETRY gaps=%s', blocking_gaps)
+        elif is_incomplete or blocking_gaps:
+            result['verdict'] = ESCALATION_VERDICT_INCOMPLETE
+            result['reason'] = 'case_incomplete: ' + ', '.join(blocking_gaps)
+            log.info('[DOSSIER] dossier_blocked verdict=INCOMPLETE_CASE gaps=%s', blocking_gaps)
+        else:
+            result['verdict'] = ESCALATION_VERDICT_INCOMPLETE
+            result['reason'] = 'dossier_not_ready_unknown_reason'
+            log.info('[DOSSIER] dossier_blocked verdict=INCOMPLETE_CASE gaps=none_specified')
+
+    except Exception as e:
+        log.warning('[DOSSIER] dossier_escalation_check failed: %s', e)
+        result['verdict'] = ESCALATION_VERDICT_INCOMPLETE
+        result['reason'] = 'escalation_check_exception'
+
+    return result
+
+
+def apply_dossier_escalation_verdict(session: dict, cs: dict, verdict_result: dict) -> None:
+    """
+    Apply escalation verdict to session and continuity_state.
+    Overrides analysis_stage, karen_access, needs_karen_review based on dossier verdict.
+    Stores verdict fields in continuity_state.
+
+    SAFE: never raises. Logs all transitions.
+    Does NOT interpret biomarkers. Does NOT assign medical priority.
+    """
+    try:
+        verdict = verdict_result.get('verdict', ESCALATION_VERDICT_INCOMPLETE)
+        reason = verdict_result.get('reason', '')
+        blocking_gaps = verdict_result.get('blocking_gaps', [])
+
+        # Store verdict in continuity_state
+        cs['escalation_verdict'] = verdict
+        cs['escalation_verdict_reason'] = reason
+        cs['escalation_blocked_by'] = blocking_gaps
+        session['continuity_state'] = cs
+
+        if verdict == ESCALATION_VERDICT_READY:
+            # Dossier is ready — escalation may proceed (existing flags stay set)
+            log.info('[DOSSIER] escalation_allowed verdict=READY_FOR_KAREN stage=%s',
+                     session.get('analysis_stage'))
+
+        elif verdict == ESCALATION_VERDICT_RETRY:
+            # Upload was unreadable — pull back escalation, keep in analysis route
+            session['analysis_stage'] = STAGE_INCOMPLETE
+            session['karen_access'] = False
+            session['needs_karen_review'] = False
+            log.info('[DOSSIER] upload_retry_requested verdict=NEEDS_UPLOAD_RETRY '
+                     'stage forced to=%s gaps=%s', STAGE_INCOMPLETE, blocking_gaps)
+
+        elif verdict == ESCALATION_VERDICT_INCOMPLETE:
+            # Valid upload but missing data — keep in waiting state, delay escalation
+            if session.get('analysis_stage') == STAGE_ESCALATED:
+                session['analysis_stage'] = STAGE_WAITING
+                session['karen_access'] = False
+                session['needs_karen_review'] = False
+                log.info('[DOSSIER] escalation_delayed verdict=INCOMPLETE_CASE '
+                         'stage reverted from ESCALATED to WAITING gaps=%s', blocking_gaps)
+            else:
+                log.info('[DOSSIER] escalation_delayed verdict=INCOMPLETE_CASE '
+                         'stage unchanged=%s gaps=%s', session.get('analysis_stage'), blocking_gaps)
+
+    except Exception as e:
+        log.warning('[DOSSIER] apply_dossier_escalation_verdict failed: %s', e)
+
+
 def evaluate_escalation(ocr_text: str, attachment_type: str, ocr_confidence: str, pages_count: int = 1) -> dict:
     text_lower = (ocr_text or '').lower()
     reason_parts = []
@@ -245,6 +380,16 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
         log.warning('[DOSSIER] dossier_assembly_failed: %s', _dossier_err)
 
 
+
+    # Phase 5.1 Step 4: Dossier-aware escalation check — gates Karen access
+    try:
+        _verdict_result = dossier_escalation_check(cs)
+        apply_dossier_escalation_verdict(session, cs, _verdict_result)
+        _verdict = _verdict_result.get('verdict', '')
+        log.info('[DOSSIER] escalation_verdict=%s reason=%.120s',
+                 _verdict, _verdict_result.get('reason', ''))
+    except Exception as _verdict_err:
+        log.warning('[DOSSIER] escalation_verdict_check_failed: %s', _verdict_err)
 
     session['route'] = 'analysis_route'
     session['current_intent'] = 'analysis_upload'
