@@ -17,6 +17,199 @@ STAGE_INCOMPLETE = 'analysis_incomplete'
 STAGE_ESCALATED  = 'analysis_escalated'
 STAGE_REVIEWED   = 'analysis_reviewed'
 
+
+# ============================================================
+# EXPERT REVIEW LIFECYCLE STATES — Phase 5.1 Step 5
+# Deterministic state machine for Karen expert review workflow.
+# No medical logic. No diagnosis. No autonomous decisions.
+# All state transitions require explicit external trigger or wiring call.
+# ============================================================
+
+# Expert review lifecycle state constants
+REVIEW_STATE_DOSSIER_READY      = 'DOSSIER_READY'
+REVIEW_STATE_QUEUED             = 'QUEUED_FOR_KAREN'
+REVIEW_STATE_UNDER_REVIEW       = 'UNDER_REVIEW'
+REVIEW_STATE_WAITING_MORE_DATA  = 'WAITING_MORE_DATA'
+REVIEW_STATE_COMPLETED          = 'REVIEW_COMPLETED'
+REVIEW_STATE_RETURNED           = 'RETURNED_TO_ANALYSIS'
+REVIEW_STATE_FOLLOWUP           = 'FOLLOWUP_REQUIRED'
+
+# Valid transition map: {from_state: {to_state, ...}}
+# Enforces lifecycle order. No skipping states.
+_VALID_REVIEW_TRANSITIONS = {
+    None:                               {REVIEW_STATE_DOSSIER_READY, REVIEW_STATE_QUEUED},
+    REVIEW_STATE_DOSSIER_READY:         {REVIEW_STATE_QUEUED, REVIEW_STATE_RETURNED},
+    REVIEW_STATE_QUEUED:                {REVIEW_STATE_UNDER_REVIEW, REVIEW_STATE_RETURNED,
+                                         REVIEW_STATE_WAITING_MORE_DATA},
+    REVIEW_STATE_UNDER_REVIEW:          {REVIEW_STATE_COMPLETED, REVIEW_STATE_WAITING_MORE_DATA,
+                                         REVIEW_STATE_RETURNED, REVIEW_STATE_FOLLOWUP},
+    REVIEW_STATE_WAITING_MORE_DATA:     {REVIEW_STATE_QUEUED, REVIEW_STATE_RETURNED},
+    REVIEW_STATE_COMPLETED:             {REVIEW_STATE_FOLLOWUP},
+    REVIEW_STATE_RETURNED:              {REVIEW_STATE_DOSSIER_READY, REVIEW_STATE_QUEUED},
+    REVIEW_STATE_FOLLOWUP:              {REVIEW_STATE_COMPLETED, REVIEW_STATE_RETURNED},
+}
+
+# States that block escalation completion (cannot be marked done while in these states)
+_ESCALATION_BLOCKING_REVIEW_STATES = {
+    REVIEW_STATE_WAITING_MORE_DATA,
+    REVIEW_STATE_RETURNED,
+}
+
+
+def validate_review_transition(current_state: Optional[str], target_state: str) -> bool:
+    """
+    Check whether a lifecycle transition is permitted.
+
+    Returns True if transition is valid, False otherwise.
+    Logs a warning on invalid transition attempt.
+    SAFE: never raises.
+    """
+    try:
+        allowed = _VALID_REVIEW_TRANSITIONS.get(current_state, set())
+        if target_state in allowed:
+            return True
+        log.warning(
+            '[REVIEW] invalid_transition attempted from=%s to=%s allowed=%s',
+            current_state, target_state, sorted(allowed),
+        )
+        return False
+    except Exception as e:
+        log.warning('[REVIEW] validate_review_transition error: %s', e)
+        return False
+
+
+def initialize_expert_review_state(session: dict, contact_id: str = '') -> None:
+    """
+    Initialize the expert review lifecycle state when dossier is first ready.
+    Transitions from None → DOSSIER_READY → QUEUED_FOR_KAREN.
+    Called once per upload when escalation_verdict == READY_FOR_KAREN.
+
+    SAFE: non-fatal. Idempotent if already initialized.
+    No medical logic. No autonomous decisions.
+    """
+    try:
+        cs = session.get('continuity_state') or {}
+        current_state = cs.get('expert_review_state')
+
+        # Idempotent: do not re-initialize if already queued or beyond
+        if current_state in (
+            REVIEW_STATE_QUEUED, REVIEW_STATE_UNDER_REVIEW,
+            REVIEW_STATE_COMPLETED, REVIEW_STATE_FOLLOWUP,
+        ):
+            log.info('[REVIEW] review_state_already_active contact=%s state=%s',
+                     contact_id, current_state)
+            return
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        # Transition: None → DOSSIER_READY
+        if validate_review_transition(current_state, REVIEW_STATE_DOSSIER_READY):
+            cs['expert_review_state']            = REVIEW_STATE_DOSSIER_READY
+            cs['expert_review_last_transition']  = now_iso
+            cs['expert_review_blockers']         = []
+            cs['expert_followup_required']       = False
+            session['continuity_state'] = cs
+            log.info('[REVIEW] review_state_initialized contact=%s state=%s',
+                     contact_id, REVIEW_STATE_DOSSIER_READY)
+
+        # Auto-advance: DOSSIER_READY → QUEUED_FOR_KAREN
+        if validate_review_transition(REVIEW_STATE_DOSSIER_READY, REVIEW_STATE_QUEUED):
+            cs['expert_review_state']            = REVIEW_STATE_QUEUED
+            cs['expert_review_started_at']       = now_iso
+            cs['expert_review_last_transition']  = now_iso
+            session['continuity_state'] = cs
+            log.info('[REVIEW] review_transition contact=%s from=%s to=%s',
+                     contact_id, REVIEW_STATE_DOSSIER_READY, REVIEW_STATE_QUEUED)
+
+    except Exception as e:
+        log.warning('[REVIEW] initialize_expert_review_state failed: %s', e)
+
+
+def transition_expert_review_state(
+    session: dict,
+    target_state: str,
+    contact_id: str = '',
+    blockers: Optional[list] = None,
+    followup_required: bool = False,
+) -> bool:
+    """
+    Transition the expert review lifecycle to a new state.
+    Validates transition before applying. Stores result in continuity_state.
+
+    Returns True if transition was applied, False if blocked.
+    SAFE: non-fatal. Does not interpret medical data.
+
+    Args:
+        session: full session dict
+        target_state: one of the REVIEW_STATE_* constants
+        contact_id: for logging
+        blockers: list of operational blocker strings (no medical language)
+        followup_required: flag to mark that follow-up action is needed
+    """
+    try:
+        cs = session.get('continuity_state') or {}
+        current_state = cs.get('expert_review_state')
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if not validate_review_transition(current_state, target_state):
+            log.warning('[REVIEW] review_blocked contact=%s from=%s to=%s',
+                        contact_id, current_state, target_state)
+            return False
+
+        # Safety rules
+        if target_state == REVIEW_STATE_COMPLETED and current_state != REVIEW_STATE_UNDER_REVIEW:
+            log.warning('[REVIEW] review_blocked cannot_complete: must be UNDER_REVIEW first '
+                        'contact=%s current=%s', contact_id, current_state)
+            return False
+
+        if target_state == REVIEW_STATE_UNDER_REVIEW:
+            dossier = cs.get('karen_expert_dossier') or {}
+            handoff = dossier.get('handoff_notes') or {}
+            if not handoff.get('ready_for_karen', False):
+                log.warning('[REVIEW] review_blocked incomplete_dossier_cannot_enter_UNDER_REVIEW '
+                            'contact=%s', contact_id)
+                # Add blocker but do not crash
+                cs['expert_review_blockers'] = list(
+                    set(cs.get('expert_review_blockers') or []) |
+                    {'incomplete_dossier'}
+                )
+                session['continuity_state'] = cs
+                return False
+
+        # Apply transition
+        cs['expert_review_state']           = target_state
+        cs['expert_review_last_transition'] = now_iso
+        cs['expert_followup_required']      = followup_required
+
+        if blockers is not None:
+            cs['expert_review_blockers'] = blockers
+        elif target_state not in _ESCALATION_BLOCKING_REVIEW_STATES:
+            cs['expert_review_blockers'] = []
+
+        if target_state == REVIEW_STATE_COMPLETED:
+            cs['expert_review_completed_at'] = now_iso
+
+        if target_state == REVIEW_STATE_FOLLOWUP:
+            cs['expert_followup_required'] = True
+
+        session['continuity_state'] = cs
+
+        log.info('[REVIEW] review_transition contact=%s from=%s to=%s followup=%s blockers=%s',
+                 contact_id, current_state, target_state, followup_required, blockers)
+
+        if target_state == REVIEW_STATE_COMPLETED:
+            log.info('[REVIEW] review_completed contact=%s', contact_id)
+        elif target_state == REVIEW_STATE_FOLLOWUP:
+            log.info('[REVIEW] followup_requested contact=%s', contact_id)
+
+        return True
+
+    except Exception as e:
+        log.warning('[REVIEW] transition_expert_review_state failed: %s', e)
+        return False
+
+
+
 _ONCOLOGY_KEYWORDS = [
     'rak', 'onkologiya', 'opuhol', 'metastaz', 'limfoma', 'sarkoma',
     'gistologiya', 'biopsiya', 'onkomarker', 'karcinoma', 'melanoma',
@@ -399,6 +592,25 @@ def save_analysis_to_session(session, attachment_meta, ocr_result, escalation_re
              new_stage, ocr_confidence, escalation_result.get('needs_escalation'),
              completeness_result.get('missing_items'))
     log.info('[ANALYSIS] analysis_route_entered stage=%s', new_stage)
+
+    # Phase 5.1 Step 5: Expert review lifecycle initialization
+    try:
+        _esc_verdict = cs.get('escalation_verdict', '')
+        if _esc_verdict == ESCALATION_VERDICT_READY:
+            initialize_expert_review_state(session)
+            log.info('[REVIEW] review_state_initialized_after_escalation verdict=%s', _esc_verdict)
+        elif _esc_verdict in (ESCALATION_VERDICT_RETRY, ESCALATION_VERDICT_INCOMPLETE):
+            # Dossier not ready — mark lifecycle state as WAITING_MORE_DATA if already queued
+            _current_review_state = cs.get('expert_review_state')
+            if _current_review_state == REVIEW_STATE_QUEUED:
+                transition_expert_review_state(
+                    session, REVIEW_STATE_WAITING_MORE_DATA,
+                    blockers=cs.get('escalation_blocked_by', []),
+                )
+    except Exception as _lifecycle_err:
+        log.warning('[REVIEW] lifecycle_init_failed: %s', _lifecycle_err)
+
+
     return session
 
 def detect_analysis_stage(session: dict) -> Optional[str]:
@@ -415,11 +627,24 @@ def has_analysis_uploaded(session: dict) -> bool:
     return bool(cs.get('analysis_received_at') or detect_analysis_stage(session))
 
 def enter_waiting_state(session: dict, contact_id: str = '') -> None:
-    session['analysis_stage'] = STAGE_WAITING
+    """
+    Transition session to waiting state.
+    Phase 5.1 Step 5: Lifecycle-aware — does not downgrade a QUEUED_FOR_KAREN review state.
+    """
     cs = session.get('continuity_state') or {}
+    review_state = cs.get('expert_review_state')
+
+    # Do not override an active review queue with a waiting state
+    if review_state in (REVIEW_STATE_QUEUED, REVIEW_STATE_UNDER_REVIEW):
+        log.info('[ANALYSIS] waiting_state_skipped contact=%s review_state=%s',
+                 contact_id, review_state)
+        return
+
+    session['analysis_stage'] = STAGE_WAITING
     cs['analysis_waiting_since'] = datetime.now(timezone.utc).isoformat()
     session['continuity_state'] = cs
     log.info('[ANALYSIS] waiting_state_started contact=%s', contact_id)
+
 
 def log_missing_analysis_request(missing_items: list, contact_id: str = '') -> None:
     log.info('[ANALYSIS] missing_analysis_requested contact=%s items=%s', contact_id, missing_items)
