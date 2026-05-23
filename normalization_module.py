@@ -817,3 +817,180 @@ def normalize_ocr_result(
 
     ocr_result['normalized'] = result_package
     return ocr_result
+
+
+# ============================================================
+# CHRONOLOGY VERSION
+# ============================================================
+CHRONOLOGY_VERSION = '5.1.2'
+
+# ============================================================
+# CHRONOLOGY MERGE — Phase 5.1 Step 2
+# Merges multiple upload biomarker lists into a structured
+# chronological patient analysis timeline.
+# Deterministic. Auditable. No diagnosis. No AI inference.
+# ============================================================
+
+
+def build_chronology(
+    normalized_uploads_history: List[List[Dict[str, Any]]],
+) -> Dict[str, Any]:
+    """
+    Merge multiple upload biomarker lists into one structured chronological timeline.
+
+    Input:
+        normalized_uploads_history: list of biomarker lists.
+            Each inner list = normalized['biomarkers'] from one upload session.
+
+    Output schema:
+    {
+        "chronology_version": str,
+        "uploads_count": int,
+        "biomarkers_count": int,
+        "dates": [
+            {
+                "date": str | None,
+                "source_upload_ids": [str],
+                "biomarkers": [...]
+            }
+        ],
+        "repeated_biomarkers": {
+            "canonical_name": [
+                {"date": str, "value": float|None, "unit": str|None,
+                 "source_upload_id": str, "confidence": float|None}
+            ]
+        },
+        "missing_dates": [str],
+        "low_confidence_items": [...]
+    }
+
+    SAFE: never raises. Failures are logged and empty structure returned.
+    """
+    chronology: Dict[str, Any] = {
+        'chronology_version': CHRONOLOGY_VERSION,
+        'uploads_count': 0,
+        'biomarkers_count': 0,
+        'dates': [],
+        'repeated_biomarkers': {},
+        'missing_dates': [],
+        'low_confidence_items': [],
+    }
+
+    try:
+        if not normalized_uploads_history:
+            log.info('[CHRONOLOGY] build_chronology called with empty uploads history')
+            return chronology
+
+        upload_count = len(normalized_uploads_history)
+        chronology['uploads_count'] = upload_count
+        log.info('[CHRONOLOGY] build_chronology start uploads=%d', upload_count)
+
+        # Step 1: Flatten all biomarkers from all uploads
+        all_biomarkers: List[Dict[str, Any]] = []
+        for upload_list in normalized_uploads_history:
+            if isinstance(upload_list, list):
+                all_biomarkers.extend(upload_list)
+
+        chronology['biomarkers_count'] = len(all_biomarkers)
+
+        # Step 2: Collect low-confidence items (confidence < 0.7)
+        LOW_CONFIDENCE_THRESHOLD = 0.7
+        chronology['low_confidence_items'] = [
+            b for b in all_biomarkers
+            if (b.get('confidence') or 0) < LOW_CONFIDENCE_THRESHOLD
+        ]
+
+        # Step 3: Collect source_upload_ids where date could not be extracted
+        missing_upload_ids: set = set()
+        for b in all_biomarkers:
+            if not b.get('date'):
+                sid = b.get('source_upload_id', '')
+                if sid:
+                    missing_upload_ids.add(sid)
+        chronology['missing_dates'] = sorted(missing_upload_ids)
+
+        # Step 4: Group biomarkers by date key
+        date_groups: Dict[str, List[Dict[str, Any]]] = {}
+        date_upload_ids: Dict[str, set] = {}
+
+        for b in all_biomarkers:
+            date_key = b.get('date') or '__no_date__'
+            if date_key not in date_groups:
+                date_groups[date_key] = []
+                date_upload_ids[date_key] = set()
+            date_groups[date_key].append(b)
+            sid = b.get('source_upload_id', '')
+            if sid:
+                date_upload_ids[date_key].add(sid)
+
+        # Step 5: Within each date group, deduplicate by canonical_name
+        # Same canonical_name + date → keep highest confidence entry
+        def _dedup_by_name(
+            biomarker_list: List[Dict[str, Any]],
+        ) -> List[Dict[str, Any]]:
+            best: Dict[str, Dict[str, Any]] = {}
+            for b in biomarker_list:
+                name = b.get('canonical_name', 'unknown')
+                existing_conf = best[name].get('confidence', 0) if name in best else -1
+                if existing_conf < (b.get('confidence') or 0):
+                    best[name] = b
+            return sorted(
+                best.values(),
+                key=lambda x: x.get('canonical_name') or '',
+            )
+
+        # Step 6: Build sorted dates list (known dates asc, then unknowns)
+        sorted_date_keys = sorted(
+            date_groups.keys(),
+            key=lambda d: (d == '__no_date__', d),
+        )
+
+        dates_list = []
+        for date_key in sorted_date_keys:
+            biomarkers_for_date = _dedup_by_name(date_groups[date_key])
+            upload_ids_for_date = sorted(date_upload_ids.get(date_key, set()))
+            dates_list.append({
+                'date': date_key if date_key != '__no_date__' else None,
+                'source_upload_ids': upload_ids_for_date,
+                'biomarkers': biomarkers_for_date,
+            })
+
+        chronology['dates'] = dates_list
+
+        # Step 7: Build repeated_biomarkers map
+        # Canonical names that appear across multiple date entries → repeated
+        name_appearances: Dict[str, List[Dict[str, Any]]] = {}
+        for date_entry in dates_list:
+            for b in date_entry['biomarkers']:
+                cname = b.get('canonical_name', 'unknown')
+                if cname not in name_appearances:
+                    name_appearances[cname] = []
+                name_appearances[cname].append({
+                    'date': b.get('date'),
+                    'value': b.get('value'),
+                    'unit': b.get('unit'),
+                    'source_upload_id': b.get('source_upload_id', ''),
+                    'confidence': b.get('confidence'),
+                })
+
+        # Only include names that appear more than once (tracked across dates)
+        chronology['repeated_biomarkers'] = {
+            cname: appearances
+            for cname, appearances in name_appearances.items()
+            if len(appearances) > 1
+        }
+
+        log.info(
+            '[CHRONOLOGY] build_chronology complete '
+            'dates=%d biomarkers=%d repeated=%d low_conf=%d missing_date_uploads=%d',
+            len(dates_list),
+            chronology['biomarkers_count'],
+            len(chronology['repeated_biomarkers']),
+            len(chronology['low_confidence_items']),
+            len(chronology['missing_dates']),
+        )
+
+    except Exception as e:
+        log.error('[CHRONOLOGY] build_chronology failed: %s', e, exc_info=True)
+
+    return chronology
