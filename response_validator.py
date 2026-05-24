@@ -63,6 +63,30 @@ _FORBIDDEN_PHRASES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Capsule / formula / Pythons Elixir ban — legal boundary
+# ---------------------------------------------------------------------------
+# Per concept (Python Method Knowledge Base, §4 and «Голос Анны»):
+# bot sells the program and Karen's supervision only; capsules / formula /
+# Pythons Elixir / composition / dosage / delivery are Karen's personal work
+# with a patient, outside the bot, the offer and Stripe. Hard ban.
+_CAPSULE_FORMULA_PATTERNS = [
+    r"капсул",         # капсула, капсулы, капсулам, ...
+    r"формул",         # формула, формулу, формулой, ...
+    r"эликсир",        # эликсир (Russian transliteration)
+    r"elixir",         # Elixir (English / Pythons Elixir)
+    r"pythons\s+elixir",
+    r"дозиров",        # дозировка, дозировкой, дозируется
+    r"состав\s+(препарат|капсул|формул|эликсир)",  # narrow — avoids "состав крови"
+]
+
+# Safe fallback from «Голос Анны» — used when a forbidden mention is caught.
+_CAPSULE_FORMULA_FALLBACK = (
+    "Здесь, в боте, мы обсуждаем индивидуальное сопровождение Карена. "
+    "Всё, что касается личной разработки формулы — Карен ответит на ваши "
+    "вопросы лично, после того как мы войдём в работу."
+)
+
+# ---------------------------------------------------------------------------
 # Minimum response length (chars)
 # ---------------------------------------------------------------------------
 _MIN_RESPONSE_LEN = 20
@@ -191,6 +215,19 @@ class ResponseValidator:
                         "обратиться к лечащему врачу. Я могу помочь подготовить "
                         "вопросы для консультации."
                     )
+                    break
+
+            # -------------------------------------------------------------------
+            # Check 2b: Capsule / formula / Pythons Elixir mention (legal ban)
+            # -------------------------------------------------------------------
+            for pattern in _CAPSULE_FORMULA_PATTERNS:
+                if re.search(pattern, reply_lower):
+                    issues.append(f"capsule_formula_mention: {pattern}")
+                    log.error(
+                        "[VALIDATOR] CAPSULE/FORMULA mention in %s response: %s",
+                        agent, pattern,
+                    )
+                    safe_reply = _CAPSULE_FORMULA_FALLBACK
                     break
 
             # -------------------------------------------------------------------
