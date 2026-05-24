@@ -182,6 +182,12 @@ async def send_message(contact_id: str, text: str) -> bool:
 
 
 async def send_document(contact_id: str, document_url: str, caption: str = "") -> bool:
+    # Direct Telegram mode for tg_ prefixed contact_ids (from /telegram/webhook)
+    if contact_id and contact_id.startswith("tg_"):
+        chat_id = contact_id[3:]  # strip "tg_" prefix
+        return await _send_document_telegram(chat_id, document_url, caption)
+
+    # SendPulse mode (default path)
     token = await get_sendpulse_token()
     if not token:
         log.error("No SendPulse token")
@@ -235,6 +241,34 @@ async def _send_message_telegram(chat_id: str, text: str) -> bool:
             return True
     except Exception as e:
         log.error("[TG_DIRECT] send_message_telegram error: %s", e)
+        return False
+
+
+async def _send_document_telegram(chat_id: str, document_url: str, caption: str = "") -> bool:
+    """Send a document via direct Telegram Bot API (used for tg_ contact_ids).
+
+    Telegram accepts a public URL in the `document` field and fetches the file
+    itself, which works for our Railway-hosted oferta at /documents/oferta.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        log.error("[TG_DIRECT] No TELEGRAM_BOT_TOKEN configured")
+        return False
+    payload = {"chat_id": chat_id, "document": document_url}
+    if caption:
+        payload["caption"] = caption
+    try:
+        async with httpx.AsyncClient(timeout=30) as cli:
+            r = await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
+                json=payload,
+            )
+            if r.status_code >= 400:
+                log.error("[TG_DIRECT] sendDocument %d: %s", r.status_code, r.text[:200])
+                return False
+            log.info("[TG_DIRECT] sent_document chat_id=%s url=%.60s", chat_id, document_url)
+            return True
+    except Exception as e:
+        log.error("[TG_DIRECT] send_document_telegram error: %s", e)
         return False
 
 
