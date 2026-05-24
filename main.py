@@ -429,7 +429,7 @@ _ANNA_CHAT_ID_FOR_TG = os.environ.get("ANNA_CHAT_ID", "402361257")
 # Human-readable tariff labels for button text and forwarded notifications.
 _TARIFF_LABELS = {
     1: "Знакомство ($1113, 6 недель)",
-    2: "Полное сопровождение ($4725, 21 неделя)",
+    2: "Полное сопровождение ($4725, 6 месяцев)",
 }
 
 _OFERTA_MARKER_RE = re.compile(r"\[SEND_OFERTA(?::(1|2))?\]")
@@ -897,7 +897,7 @@ async def stripe_webhook(request: Request):
         if amount_total == 111300:
             tariff_name = "Tariff Znakomstvo - $1113 / 6 weeks"
         elif amount_total == 472500:
-            tariff_name = "Polnoe soprovozhdenie - $4725 / 21 weeks"
+            tariff_name = "Polnoe soprovozhdenie - $4725 / 6 months"
         else:
             tariff_name = f"Unknown tariff - {amount_total} cents"
 
