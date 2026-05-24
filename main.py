@@ -12,6 +12,37 @@ import httpx
 
 from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions, update_session_from_analysis, get_payment_link
 from consent_log import log_consent, OFERTA_VERSION
+from response_validator import ResponseValidator
+
+# Singleton validator — used to filter outgoing replies before they reach
+# the patient (catches capsule/formula mentions, medical overreach, etc.).
+_response_validator = ResponseValidator()
+
+
+def _validate_outgoing_reply(reply: str, contact_id: str) -> str:
+    """Run the outgoing reply through ResponseValidator before sending.
+    Returns the original reply if safe, or the safe_reply fallback if not.
+    Failures in the validator itself never block the user flow.
+    """
+    if not reply:
+        return reply
+    session = _agent_sessions.get(contact_id, {})
+    ctx = {
+        "payment_status": session.get("payment_status", "new"),
+        "route": session.get("route", "reception"),
+    }
+    try:
+        result = _response_validator.validate_response(reply, session, ctx)
+    except Exception as e:
+        log.error("[VALIDATOR] error on %s: %s", contact_id, e)
+        return reply
+    if not result.get("safe", True):
+        log.warning(
+            "[VALIDATOR] reply rewritten contact=%s issues=%s",
+            contact_id, result.get("issues"),
+        )
+        return result.get("safe_reply", reply)
+    return reply
 from ai_router import health_check as ai_health_check, ask_claude
 from image_pipeline import extract_attachment, has_attachment, process_attachment_message
 
@@ -765,6 +796,7 @@ async def telegram_webhook(request: Request):
         log.info("[TG_DIRECT] %s <- (attachment reply) %s", contact_id, str(reply)[:100])
         had_marker = "[SEND_OFERTA" in str(reply)
         reply, tariff_hint = _parse_oferta_marker(reply)
+        reply = _validate_outgoing_reply(reply, contact_id)
         if reply:
             await send_message(contact_id, reply)
         if had_marker:
@@ -784,6 +816,7 @@ async def telegram_webhook(request: Request):
     # followed by an inline_keyboard with two/three consent buttons.
     had_marker = "[SEND_OFERTA" in str(reply)
     reply, tariff_hint = _parse_oferta_marker(reply)
+    reply = _validate_outgoing_reply(reply, contact_id)
     if reply:
         await send_message(contact_id, reply)
     if had_marker:

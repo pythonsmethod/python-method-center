@@ -77,6 +77,16 @@ _CAPSULE_FORMULA_PATTERNS = [
     r"pythons\s+elixir",
     r"дозиров",        # дозировка, дозировкой, дозируется
     r"состав\s+(препарат|капсул|формул|эликсир)",  # narrow — avoids "состав крови"
+    # ── Per Anna's correction (2026-05-24): Karen does NOT individualize
+    # the capsule composition — the Formula is a single fixed patent-pending
+    # composition he ships for free as a personal initiative outside the
+    # program. The bot must not imply any per-patient capsule protocol
+    # / dosing / schedule / composition tuning.
+    r"протокол\s+капсул",                     # "протокол капсул"
+    r"индивидуальный\s+состав",               # "индивидуальный состав"
+    r"состав\s+под\s+(ваш|тво|ситуац|случа)", # "состав под вашу ситуацию/случай"
+    r"подбирает\b[^.]{0,30}(состав|протокол|формул|капсул|дозиров|компонент)",
+    r"схема\s+при[её]ма",                     # "схема приёма" — only about capsules
 ]
 
 # Safe fallback from «Голос Анны» — used when a forbidden mention is caught.
