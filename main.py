@@ -3,13 +3,15 @@
 # FastAPI + SendPulse + Claude AI Agents + Stripe. Deploy: Railway.
 import asyncio
 import os
+import re
 import logging
 import stripe
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
-from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions, update_session_from_analysis
+from agents import process_message, on_payment_confirmed, load_session, save_session, sessions as _agent_sessions, update_session_from_analysis, get_payment_link
+from consent_log import log_consent, OFERTA_VERSION
 from ai_router import health_check as ai_health_check, ask_claude
 from image_pipeline import extract_attachment, has_attachment, process_attachment_message
 
@@ -272,6 +274,74 @@ async def _send_document_telegram(chat_id: str, document_url: str, caption: str 
         return False
 
 
+async def _send_inline_keyboard_telegram(
+    chat_id: str, text: str, buttons: list[list[dict]]
+) -> bool:
+    """
+    Send a message with a Telegram inline_keyboard. `buttons` is a list of rows;
+    each row is a list of {"text": ..., "callback_data": ...} dicts.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        log.error("[TG_DIRECT] No TELEGRAM_BOT_TOKEN configured")
+        return False
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": {"inline_keyboard": buttons},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as cli:
+            r = await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                json=payload,
+            )
+            if r.status_code >= 400:
+                log.error("[TG_DIRECT] sendMessage(keyboard) %d: %s", r.status_code, r.text[:200])
+                return False
+            log.info("[TG_DIRECT] sent_keyboard chat_id=%s buttons=%d", chat_id, sum(len(r) for r in buttons))
+            return True
+    except Exception as e:
+        log.error("[TG_DIRECT] send_inline_keyboard_telegram error: %s", e)
+        return False
+
+
+async def _answer_callback_query_telegram(callback_query_id: str, text: str = "") -> None:
+    """
+    Acknowledge a Telegram callback_query so the loading spinner clears.
+    Fire-and-forget — failures are logged but don't block the flow.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    payload = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery",
+                json=payload,
+            )
+    except Exception as e:
+        log.error("[TG_DIRECT] answerCallbackQuery error: %s", e)
+
+
+async def _edit_remove_keyboard_telegram(chat_id: str, message_id: int) -> None:
+    """
+    Remove the inline_keyboard from a previously-sent message so the user
+    can't click the same consent button twice. Fire-and-forget.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as cli:
+            await cli.post(
+                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup",
+                json={"chat_id": chat_id, "message_id": message_id},
+            )
+    except Exception as e:
+        log.error("[TG_DIRECT] editMessageReplyMarkup error: %s", e)
+
+
 def extract_event_telegram(body: dict):
     """
     Parse a native Telegram Bot API update.
@@ -314,6 +384,185 @@ def extract_event_telegram(body: dict):
         }
 
     return contact_id, text, attachment
+
+
+# ============================================================
+# PRE-PAYMENT CONSENT FLOW (Step 3a)
+# Two-button inline_keyboard with persisted consent + deterministic
+# Stripe link delivery + escalation to Anna for pre-payment questions.
+# ============================================================
+
+# Anna's personal Telegram chat_id for pre-payment-question forwarding.
+_ANNA_CHAT_ID_FOR_TG = os.environ.get("ANNA_CHAT_ID", "402361257")
+
+# Human-readable tariff labels for button text and forwarded notifications.
+_TARIFF_LABELS = {
+    1: "Знакомство ($1113, 6 недель)",
+    2: "Полное сопровождение ($4725, 21 неделя)",
+}
+
+_OFERTA_MARKER_RE = re.compile(r"\[SEND_OFERTA(?::(1|2))?\]")
+
+
+def _parse_oferta_marker(reply: str) -> tuple[str, "int | None"]:
+    """
+    Extract the [SEND_OFERTA] or [SEND_OFERTA:N] marker from the reply.
+    Returns (cleaned_reply, tariff_number_or_None).
+    """
+    m = _OFERTA_MARKER_RE.search(reply)
+    if not m:
+        return reply, None
+    tariff = int(m.group(1)) if m.group(1) else None
+    cleaned = _OFERTA_MARKER_RE.sub("", reply).strip()
+    return cleaned, tariff
+
+
+def _build_consent_keyboard(tariff_hint: "int | None") -> list[list[dict]]:
+    """
+    Build the inline_keyboard for the consent prompt.
+    - If tariff is known (Lucky/Maya already recommended one), 2 buttons:
+        [Я ознакомился и готов] [Вопрос перед оплатой]
+    - If tariff is unknown, 3 buttons (one per tariff + question):
+        [Готов к Знакомству] [Готов к Полному]
+        [Вопрос перед оплатой]
+    """
+    if tariff_hint in (1, 2):
+        return [
+            [{"text": "Я ознакомился(лась) и готов(а) к участию",
+              "callback_data": f"consent_yes:{tariff_hint}"}],
+            [{"text": "У меня есть вопрос перед оплатой",
+              "callback_data": "consent_question"}],
+        ]
+    return [
+        [{"text": "Готов(а) к Знакомству ($1113)",
+          "callback_data": "consent_yes:1"}],
+        [{"text": "Готов(а) к Полному ($4725)",
+          "callback_data": "consent_yes:2"}],
+        [{"text": "У меня есть вопрос перед оплатой",
+          "callback_data": "consent_question"}],
+    ]
+
+
+async def _send_oferta_and_consent_buttons(contact_id: str, tariff_hint: "int | None") -> None:
+    """
+    Send the oferta PDF, then a follow-up message with the consent keyboard.
+    Both sends go through send_document/_send_inline_keyboard_telegram which
+    already know about the tg_ prefix.
+    """
+    await send_document(contact_id, OFERTA_URL, caption="Договор-оферта Python Method")
+    intro = (
+        "Перед оплатой важно, чтобы вы ознакомились с условиями участия. "
+        "Когда прочтёте — выберите ниже:"
+    )
+    if contact_id and contact_id.startswith("tg_"):
+        chat_id = contact_id[3:]
+        buttons = _build_consent_keyboard(tariff_hint)
+        await _send_inline_keyboard_telegram(chat_id, intro, buttons)
+    else:
+        # Non-tg_ contact (legacy SendPulse path): fall back to plain text —
+        # the LLM will have to render the buttons itself in that channel.
+        await send_message(contact_id, intro)
+
+
+async def _handle_consent_callback(callback_query: dict) -> None:
+    """
+    Handle inline_keyboard clicks: consent_yes:N (record + send Stripe link)
+    or consent_question (forward conversation context to Anna).
+    """
+    cq_id = callback_query.get("id", "")
+    data = callback_query.get("data", "")
+    msg = callback_query.get("message") or {}
+    chat = msg.get("chat") or {}
+    chat_id_raw = chat.get("id")
+    message_id = msg.get("message_id")
+    if not chat_id_raw:
+        await _answer_callback_query_telegram(cq_id)
+        return
+
+    chat_id = str(chat_id_raw)
+    contact_id = f"tg_{chat_id}"
+
+    # Always acknowledge first so the user's button stops spinning.
+    await _answer_callback_query_telegram(cq_id)
+
+    # Remove the keyboard so the same button can't be clicked twice.
+    if message_id is not None:
+        await _edit_remove_keyboard_telegram(chat_id, int(message_id))
+
+    if data.startswith("consent_yes:"):
+        try:
+            tariff = int(data.split(":", 1)[1])
+        except (ValueError, IndexError):
+            log.error("[CONSENT] malformed callback_data: %s", data)
+            return
+        if tariff not in (1, 2):
+            log.error("[CONSENT] invalid tariff in callback_data: %s", data)
+            return
+
+        # Persist the legal fact of acceptance (oferta §6, chargeback defense).
+        logged = await log_consent(contact_id, tariff, OFERTA_VERSION, source="inline_button")
+        if not logged:
+            log.warning("[CONSENT] consent not persisted contact=%s tariff=%d", contact_id, tariff)
+
+        # Deterministic Stripe link delivery — does not depend on the LLM.
+        link = get_payment_link(contact_id, tariff)
+        if not link:
+            log.error("[CONSENT] empty payment link for tariff=%d (TARIFF_%d_LINK env missing?)", tariff, tariff)
+            await send_message(
+                contact_id,
+                "Возникла техническая заминка с ссылкой на оплату. "
+                "Сейчас передам Анне, чтобы она помогла лично.",
+            )
+            await _forward_to_anna(
+                f"Клиент {contact_id} согласился с офертой (тариф {tariff}), "
+                f"но Stripe-ссылка не сгенерирована. Свяжитесь лично."
+            )
+            return
+
+        tariff_label = _TARIFF_LABELS.get(tariff, f"Тариф {tariff}")
+        await send_message(
+            contact_id,
+            f"Спасибо. Согласие записано. Ваш формат: {tariff_label}.\n\n"
+            f"Ссылка на оплату:\n{link}\n\n"
+            f"После оплаты Карен получит ваш профиль и свяжется лично.",
+        )
+        log.info("[CONSENT] sent_payment_link contact=%s tariff=%d", contact_id, tariff)
+        return
+
+    if data == "consent_question":
+        # Pull the recent dialog from the agent session for Anna's context.
+        sess = _agent_sessions.get(contact_id, {})
+        history = sess.get("history", [])[-10:]
+        history_text = "\n".join(
+            f"{'Клиент' if m.get('role') == 'user' else 'Бот'}: {m.get('content', '')[:300]}"
+            for m in history
+        ) or "(история пуста)"
+
+        forward = (
+            f"[PRE-PAYMENT QUESTION]\n"
+            f"Контакт: {contact_id}\n"
+            f"chat_id: {chat_id}\n\n"
+            f"Последний диалог:\n{history_text}\n\n"
+            f"Клиент нажал «Вопрос перед оплатой». Напишите ему лично."
+        )
+        await _forward_to_anna(forward)
+        await send_message(
+            contact_id,
+            "Конечно. Анна лично рассмотрит ваш вопрос перед оплатой — "
+            "напишите его здесь, я тоже сразу передам ей.",
+        )
+        log.info("[CONSENT] forwarded_pre_payment_question contact=%s", contact_id)
+        return
+
+    log.warning("[CONSENT] unknown callback_data: %s", data)
+
+
+async def _forward_to_anna(text: str) -> None:
+    """Forward an admin notification to Anna's Telegram chat_id."""
+    if not _ANNA_CHAT_ID_FOR_TG:
+        log.warning("[CONSENT] ANNA_CHAT_ID not set — cannot forward")
+        return
+    await _send_message_telegram(_ANNA_CHAT_ID_FOR_TG, text)
 
 
 # ============================================================
@@ -476,6 +725,11 @@ async def telegram_webhook(request: Request):
     Set with: api.telegram.org/bot{TOKEN}/setWebhook?url={RAILWAY_URL}/telegram/webhook
     contact_id will be 'tg_' + chat_id so replies go via Telegram sendMessage directly.
     SendPulse path (/webhook) remains unchanged.
+
+    Handles three kinds of incoming updates:
+      - callback_query  → consent button clicks (Step 3a)
+      - message + text  → regular dialog
+      - message + attachment only → image pipeline
     """
     try:
         body = await request.json()
@@ -484,6 +738,15 @@ async def telegram_webhook(request: Request):
         return JSONResponse({"status": "bad_json"})
 
     log.info("[TG_DIRECT] update received: %s", str(body)[:300])
+
+    # ── Branch 0: callback_query (inline_keyboard click) ─────────────────
+    cq = body.get("callback_query")
+    if cq:
+        try:
+            await _handle_consent_callback(cq)
+        except Exception as e:
+            log.error("[TG_DIRECT] callback handler error: %s", e)
+        return JSONResponse({"status": "ok"})
 
     contact_id, text, attachment = extract_event_telegram(body)
     log.info("[WEBHOOK_SOURCE] source=telegram_direct contact_id=%s", contact_id)
@@ -500,7 +763,12 @@ async def telegram_webhook(request: Request):
             session_update_fn=update_session_from_analysis
         )
         log.info("[TG_DIRECT] %s <- (attachment reply) %s", contact_id, str(reply)[:100])
-        await send_message(contact_id, reply)
+        had_marker = "[SEND_OFERTA" in str(reply)
+        reply, tariff_hint = _parse_oferta_marker(reply)
+        if reply:
+            await send_message(contact_id, reply)
+        if had_marker:
+            await _send_oferta_and_consent_buttons(contact_id, tariff_hint)
         return JSONResponse({"status": "ok"})
 
     if not text:
@@ -510,7 +778,16 @@ async def telegram_webhook(request: Request):
     log.info("[TG_DIRECT] %s -> %s", contact_id, text[:100])
     reply = await process_message(contact_id, text)
     log.info("[TG_DIRECT] %s <- %s", contact_id, str(reply)[:100])
-    await send_message(contact_id, reply)
+
+    # Consent flow: if Maya emitted [SEND_OFERTA] or [SEND_OFERTA:N],
+    # strip the marker, send the cleaned reply, then send the oferta PDF
+    # followed by an inline_keyboard with two/three consent buttons.
+    had_marker = "[SEND_OFERTA" in str(reply)
+    reply, tariff_hint = _parse_oferta_marker(reply)
+    if reply:
+        await send_message(contact_id, reply)
+    if had_marker:
+        await _send_oferta_and_consent_buttons(contact_id, tariff_hint)
     return JSONResponse({"status": "ok"})
 
 

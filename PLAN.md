@@ -161,8 +161,58 @@ webhook на этот URL уже был установлен ранее; ком�
 - Отказаться от SendPulse-подписки.
 
 ### Шаг 3a. Юридический контур оплаты — настоящие кнопки
-**Статус:** ⏳ после Шага 2.5
-**Оценка:** 3-4 часа
+**Статус:** ✅ готово (требует live-test от Анны)
+**Фактическое время:** ~2 часа
+
+Сделано:
+
+**Новый модуль `consent_log.py`** — PostgreSQL-таблица `pre_payment_consent`
+(`contact_id, tariff, offer_version, consented_at TIMESTAMPTZ, source`)
+с lazy-init pool и graceful fallback если `DATABASE_URL` не задан
+(бот продолжает работать, просто без записи согласия). Закрывает
+требование оферты §6 («digital confirmation of offer acceptance»).
+
+**Helpers в `main.py` для Telegram inline-кнопок:**
+- `_send_inline_keyboard_telegram` — отправка `sendMessage` с `reply_markup`
+- `_answer_callback_query_telegram` — `answerCallbackQuery` (убирает спиннер)
+- `_edit_remove_keyboard_telegram` — `editMessageReplyMarkup` (удаляет
+  кнопки после клика, защита от двойного нажатия)
+
+**Бизнес-логика согласия в `main.py`:**
+- `_parse_oferta_marker` — парсит `[SEND_OFERTA]` или `[SEND_OFERTA:N]`
+- `_build_consent_keyboard` — 2 кнопки если тариф известен,
+  3 кнопки (по одной на каждый тариф + «вопрос») если нет
+- `_send_oferta_and_consent_buttons` — оферта PDF + клавиатура
+- `_handle_consent_callback` — обработчик `consent_yes:N` (логирует
+  факт + детерминированно посылает Stripe-ссылку через
+  `get_payment_link()`, не через LLM) и `consent_question`
+  (форвардит контекст диалога Анне на `ANNA_CHAT_ID`)
+- `_forward_to_anna` — helper для админ-уведомлений
+
+**Расширен `/telegram/webhook`:**
+- Новая ветка 0 — обработка `callback_query` перед обычным `message`
+- После reply от LLM — парсинг и обработка `[SEND_OFERTA]` маркера
+  в обеих ветках (text и attachment-only)
+
+**Maya промпт обновлён** (`agents.py`): убрана инструкция «нарисуй
+две кнопки текстом», явно требует ставить `[SEND_OFERTA:1]` или
+`[SEND_OFERTA:2]` (с указанием тарифа), запрещено вставлять
+Stripe-ссылку — это делает код.
+
+**Sanity-test:** парсер маркера 5/5, keyboard builder выдаёт
+правильные 2- и 3-кнопочные клавиатуры для всех tariff_hint.
+
+**Что закрыто из критических находок аудита:**
+- ✅ Настоящие Telegram inline-кнопки (раньше только текст в промпте)
+- ✅ Лог согласия в БД с timestamp + tariff + offer_version
+- ✅ Stripe-ссылка отправляется из кода через `get_payment_link()`
+  (раньше через LLM, без гарантий)
+- ✅ Кнопка «вопрос перед оплатой» работает: контекст диалога
+  форвардится Анне на ANNA_CHAT_ID
+
+**Live-test (от Анны):** написать боту до момента выбора тарифа,
+получить оферту + кнопки, кликнуть «готов(а)» — должна прийти
+Stripe-ссылка. Кликнуть «вопрос» — Анна получает уведомление.
 
 Без этого фаза 1 не может быть запущена для реальных людей.
 
