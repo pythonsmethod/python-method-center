@@ -51,12 +51,20 @@
 Результат — заполненный список «что нужно сделать» в Шагах 3-4.
 
 ### Шаг 2. Фикс блокировки сервера при оплате
-**Статус:** ⏳ план готов, ждёт зелёного света
-**Оценка:** 30 минут
+**Статус:** ✅ готово
+**Фактическое время:** ~30 минут
 
-`requests.post` в `send_karen_paid_notification` и `send_payment_thanks`
-блокирует event loop FastAPI при платежах. Минимальный фикс:
-`httpx.Client` + `asyncio.to_thread(on_payment_confirmed, ...)`.
+Сделано:
+- `agents.py`: `import requests` → `import httpx`; два вызова `requests.post(...)`
+  → `httpx.post(..., timeout=10.0)` в `send_karen_paid_notification`
+  и `send_payment_thanks`. Добавлен таймаут 10с (раньше его не было —
+  при зависании Telegram запрос мог висеть бесконечно).
+- `main.py`: `on_payment_confirmed(...)` в `stripe_webhook` обёрнут в
+  `await asyncio.to_thread(...)`. Теперь event loop не блокируется на
+  время отправки уведомлений в Telegram при поступлении оплаты.
+
+Регрессий нет: 16 fail / 56 pass до правки = 16 fail / 56 pass после.
+Падающие тесты — pre-existing, в cognitive-модулях, к фазе 1 не относятся.
 
 ### Шаг 3. Закрытие дыр в согласии с офертой
 **Статус:** ❓ зависит от Шага 1
@@ -125,6 +133,16 @@
 | Python Method Oferta v2 | На Шаге 3, чтобы показывать актуальную версию |
 | Biblia_System_Phase4_Addendum | По необходимости |
 | agents.pdf | Не нужно (есть исходный код) |
+
+---
+
+## Известные технические долги (вне фазы 1)
+
+Обнаружено по ходу, не для немедленного фикса:
+- 16 unit-тестов падают на чистом репозитории (cognitive-модули:
+  `central_cognitive_orchestrator`, `expert_load_balancing_engine`,
+  `rehabilitation_route_simulation`). Не связаны с до-оплатной зоной.
+  Разобрать после запуска фазы 1.
 
 ---
 

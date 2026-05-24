@@ -564,7 +564,8 @@ async def stripe_webhook(request: Request):
 
         if client_reference_id:
             try:
-                on_payment_confirmed(
+                await asyncio.to_thread(
+                    on_payment_confirmed,
                     contact_id=client_reference_id,
                     telegram_id=client_reference_id,
                     name=customer_name,

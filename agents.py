@@ -1425,7 +1425,7 @@ def process_message(contact_id, user_message):
 # ============================================================
 # STRIPE PAYMENT INTEGRATION
 # ============================================================
-import requests
+import httpx
 import datetime
 
 CLIENT_DB_FILE = '/app/client_database.json'
@@ -1488,11 +1488,11 @@ def send_karen_paid_notification(number, telegram_id, name, country, tariff, sum
     )
     url = f'https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage'
     try:
-        requests.post(url, json={
+        httpx.post(url, json={
             'chat_id': KAREN_CHAT_ID,
             'text': text,
             'parse_mode': 'HTML'
-        })
+        }, timeout=10.0)
     except Exception as e:
         print(f'[NOTIFY ERROR] {e}')
 
@@ -1566,9 +1566,9 @@ def send_payment_thanks(telegram_id, name, number):
     )
     url = f'https://api.telegram.org/bot{NOTIFY_BOT_TOKEN}/sendMessage'
     try:
-        requests.post(url, json={
+        httpx.post(url, json={
             'chat_id': telegram_id,
             'text': text
-        })
+        }, timeout=10.0)
     except Exception as e:
         print(f'[THANKS ERROR] {e}')
