@@ -63,6 +63,79 @@ _FORBIDDEN_PHRASES = [
 ]
 
 # ---------------------------------------------------------------------------
+# Capsule / formula / Pythons Elixir ban — legal boundary
+# ---------------------------------------------------------------------------
+# Per concept (Python Method Knowledge Base, §4 and «Голос Анны»):
+# bot sells the program and Karen's supervision only; capsules / formula /
+# Pythons Elixir / composition / dosage / delivery are Karen's personal work
+# with a patient, outside the bot, the offer and Stripe. Hard ban.
+_CAPSULE_FORMULA_PATTERNS = [
+    r"капсул",         # капсула, капсулы, капсулам, ...
+    r"формул",         # формула, формулу, формулой, ...
+    r"эликсир",        # эликсир (Russian transliteration)
+    r"elixir",         # Elixir (English / Pythons Elixir)
+    r"pythons\s+elixir",
+    r"дозиров",        # дозировка, дозировкой, дозируется
+    r"состав\s+(препарат|капсул|формул|эликсир)",  # narrow — avoids "состав крови"
+    # ── Per Anna's correction (2026-05-24): Karen does NOT individualize
+    # the capsule composition — the Formula is a single fixed patent-pending
+    # composition he ships for free as a personal initiative outside the
+    # program. The bot must not imply any per-patient capsule protocol
+    # / dosing / schedule / composition tuning.
+    r"протокол\s+капсул",                     # "протокол капсул"
+    r"индивидуальный\s+состав",               # "индивидуальный состав"
+    r"состав\s+под\s+\w+",                    # any "состав под X" (вашу, конкретного, etc.)
+    r"подбирает\b[^.]{0,30}(состав|протокол|формул|капсул|дозиров|компонент)",
+    r"созда[её]т\b[^.]{0,30}состав",          # "Карен создаёт состав" / "создаёт индивидуальный состав"
+    r"схема\s+при[её]ма",                     # "схема приёма" — only about capsules
+    r"персональная\s+формул",                 # "персональная формула под вашу ситуацию"
+    r"ваш(а|у)\s+формул",                     # "ваша формула / вашу формулу"
+    r"индивидуальный\s+протокол\s+капсул",    # explicit phrase from Anna's screenshot
+    r"золоты(е|х)\s+капсул",                  # "золотые капсулы" — per §23.14
+]
+
+# Safe fallback — verbatim from Biblia §23.5 (docs/biblia_section_23_ai_logic.md).
+# Used when a forbidden mention is caught OR a patient-asked capsule question
+# isn't routed to Karen properly. This is Anna's canonical wording.
+_CAPSULE_FORMULA_FALLBACK = (
+    "Эти вопросы Карен обсуждает лично после того, как изучит вашу "
+    "ситуацию, анализы и текущее состояние. Формула не продаётся "
+    "отдельно через центр — здесь оформляется именно сопровождение "
+    "и индивидуальная работа."
+)
+
+# ---------------------------------------------------------------------------
+# Incoming capsule/formula inquiry — patient ASKS about it
+# ---------------------------------------------------------------------------
+# Per Anna: when a patient asks about capsules/formula/dosage/delivery/price,
+# the bot must NOT ignore the question — it must route the patient to Karen
+# personally (Karen sends the Formula for free to every paid participant as
+# his personal initiative outside the bot). The bot's reply must explicitly
+# acknowledge that Karen will personally handle these questions.
+_INCOMING_CAPSULE_PATTERNS = [
+    r"капсул",
+    r"формул",
+    r"эликсир",
+    r"elixir",
+    r"pythons\s+elixir",
+    r"дозиров",
+    r"capsul",
+    r"dosag",
+]
+# Note: "состав" and "доставк" are deliberately NOT triggers — they false-fire
+# on "состав крови", "доставка договора". A real capsule inquiry will still
+# match through "капсул"/"формул"/"эликсир" — e.g. "состав формулы" matches
+# "формул", "доставка капсул" matches "капсул".
+
+# A proper reply to a capsule/formula inquiry must mention Karen AND signal
+# that he'll handle it personally / after entering the program.
+_KAREN_NAME_MARKERS = ["карен", "karen"]
+_KAREN_HANDLES_MARKERS = [
+    "лично", "сам ", "сама ", "после", "в работу",
+    "индивидуально", "индивидуальн", "personally",
+]
+
+# ---------------------------------------------------------------------------
 # Minimum response length (chars)
 # ---------------------------------------------------------------------------
 _MIN_RESPONSE_LEN = 20
@@ -192,6 +265,49 @@ class ResponseValidator:
                         "вопросы для консультации."
                     )
                     break
+
+            # -------------------------------------------------------------------
+            # Check 2b: Capsule / formula / Pythons Elixir mention (legal ban)
+            # -------------------------------------------------------------------
+            for pattern in _CAPSULE_FORMULA_PATTERNS:
+                if re.search(pattern, reply_lower):
+                    issues.append(f"capsule_formula_mention: {pattern}")
+                    log.error(
+                        "[VALIDATOR] CAPSULE/FORMULA mention in %s response: %s",
+                        agent, pattern,
+                    )
+                    safe_reply = _CAPSULE_FORMULA_FALLBACK
+                    break
+
+            # -------------------------------------------------------------------
+            # Check 2c: Patient asked about capsules — reply MUST route to Karen
+            # -------------------------------------------------------------------
+            # Find the most recent user message in history
+            last_user_msg = ""
+            for m in reversed(history):
+                if m.get("role") == "user":
+                    last_user_msg = (m.get("content", "") or "").lower()
+                    break
+
+            if last_user_msg:
+                asked_about_capsule = any(
+                    re.search(p, last_user_msg) for p in _INCOMING_CAPSULE_PATTERNS
+                )
+                if asked_about_capsule:
+                    current_reply_lower = safe_reply.lower()
+                    mentions_karen = any(
+                        m in current_reply_lower for m in _KAREN_NAME_MARKERS
+                    )
+                    signals_handling = any(
+                        m in current_reply_lower for m in _KAREN_HANDLES_MARKERS
+                    )
+                    if not (mentions_karen and signals_handling):
+                        issues.append("capsule_inquiry_not_routed_to_karen")
+                        log.error(
+                            "[VALIDATOR] Patient asked about capsule/formula but "
+                            "reply does NOT route to Karen properly"
+                        )
+                        safe_reply = _CAPSULE_FORMULA_FALLBACK
 
             # -------------------------------------------------------------------
             # Check 3: Forbidden phrases
