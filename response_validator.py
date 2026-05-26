@@ -356,6 +356,72 @@ class ResponseValidator:
                     log.error("[VALIDATOR] PROMPT LEAKAGE: %s", marker)
                     safe_reply = safe_reply.replace(marker, "")
 
+            # -------------------------------------------------------------------
+            # PHASE 3A SHADOW MODE — semantic detection active, no user-visible rewrites.
+            # Runs check_pattern_with_context() for governance pattern groups.
+            # Results: adds issues + calls record_semantic_event().
+            # Does NOT modify safe_reply. Does NOT modify return dict.
+            # -------------------------------------------------------------------
+            try:
+                _shadow_contact_id = str(context_package.get("contact_id", session.get("contact_id", "unknown")))
+                _shadow_route = route
+                _shadow_agent = agent
+
+                # Governance pattern groups with severity and violation type
+                _SHADOW_CHECKS = [
+                    (MEDICAL_EXTENDED_PATTERNS,   "medical_extended",   "HARD"),
+                    (FALSE_PRICE_PATTERNS,         "false_price",        "HARD"),
+                    (RESULT_PROMISE_PATTERNS,      "result_promise",     "HARD"),
+                    (SALES_AGGRESSIVE_PATTERNS,    "sales_aggressive",   "SOFT"),
+                    (CORPORATE_LANGUAGE_PATTERNS,  "corporate_language", "SOFT"),
+                    (CHATBOT_FAQ_PATTERNS,         "chatbot_faq",        "SOFT"),
+                    (WELLNESS_DRIFT_PATTERNS,      "wellness_drift",     "SOFT"),
+                    (KAREN_DOWNGRADE_PATTERNS,     "karen_downgrade",    "SOFT"),
+                    (OVERCONFIDENCE_PATTERNS,      "overconfidence",     "SOFT"),
+                    (COLD_AUTOMATION_PATTERNS,     "cold_automation",    "SOFT"),
+                ]
+
+                for _pattern_group, _vtype, _severity in _SHADOW_CHECKS:
+                    for _pat in _pattern_group:
+                        _ctx_result = check_pattern_with_context(
+                            _pat, reply, _vtype, _severity
+                        )
+                        if _ctx_result["matched"]:
+                            if _ctx_result["suppressed"]:
+                                log.debug(
+                                    "[SEMANTIC][SHADOW] type=%s suppressed=True reason=%s match=%s",
+                                    _vtype, _ctx_result["reason"], _ctx_result["match_text"],
+                                )
+                                with _obs_lock:
+                                    _obs_suppressed[_vtype] = _obs_suppressed.get(_vtype, 0) + 1
+                            else:
+                                _issue_key = f"{_vtype}: {_ctx_result['match_text']}"
+                                if _issue_key not in issues:
+                                    issues.append(_issue_key)
+                                if _severity == "HARD":
+                                    log.info(
+                                        "[SEMANTIC][SHADOW] type=%s suppressed=False severity=HARD agent=%s route=%s match=%s",
+                                        _vtype, _shadow_agent, _shadow_route, _ctx_result["match_text"],
+                                    )
+                                else:
+                                    log.debug(
+                                        "[SEMANTIC][SHADOW] type=%s suppressed=False severity=SOFT agent=%s route=%s match=%s",
+                                        _vtype, _shadow_agent, _shadow_route, _ctx_result["match_text"],
+                                    )
+                                record_semantic_event(
+                                    _shadow_contact_id,
+                                    _shadow_agent,
+                                    _shadow_route,
+                                    _vtype,
+                                    _severity,
+                                )
+                            break
+
+            except Exception as _shadow_err:
+                log.debug("[SEMANTIC][SHADOW] shadow check error: %s", _shadow_err)
+
+
+
         except Exception as e:
             log.error("[VALIDATOR] validate_response error: %s", e)
             issues.append(f"validator_error: {e}")
