@@ -43,7 +43,7 @@ System Experience Map — это карта для навигации, прин�
 
 ### Что такое Python Method Digital Rehabilitation Center
 
-Python Method Digital Rehabilitation Center — это цифровая среда сопровождения восстановления здоровья. Это не:
+Python Method Center — это цифровая среда персонального сопровождения. Это не:
 
 - Бот. Бот отвечает на вопросы. Центр сопровождает путь.
 - Чат. Чат начинается заново каждый раз. Центр помнит.
@@ -52,7 +52,7 @@ Python Method Digital Rehabilitation Center — это цифровая сред
 
 Python Method Digital Rehabilitation Center — это:
 
-**Digital rehabilitation environment.** Структурированное цифровое пространство, в котором человек может безопасно двигаться по маршруту восстановления здоровья. Не изолированные ответы — а последовательный путь с памятью, контекстом и присутствием.
+**Digital accompaniment environment.** Структурированное цифровое пространство, в котором человек может безопасно двигаться по маршруту сопровождения здоровья. Не изолированные ответы — а последовательный путь с памятью, контекстом и присутствием.
 
 **AI-assisted accompaniment system.** AI не является главным действующим лицом. AI является инструментом сопровождения. Главное действующее лицо — человек и его путь. Карен — живой эксперт. AI — структура, память и presence между сессиями с Кареном.
 
@@ -121,7 +121,7 @@ Python Method Digital Rehabilitation Center — это:
 **Документы:** client_onboarding_experience.md §7, client_message_library.md §9, agent_role_specification.md §7
 
 ### Active Route
-**Цель этапа:** Живое, непрерывное сопровождение на протяжении всего маршрута. Карен работает с медицинским контекстом. AI поддерживает ритм, память и daily presence.
+**Цель этапа:** Живое, непрерывное сопровождение на протяжении всего маршрута. Карен работает с индивидуальным контекстом каждого участника. AI поддерживает ритм, память и daily presence.
 **Что чувствует человек:** Присутствие системы. Ощущение, что кто-то держит нить.
 **Агенты:** Nadia (support_route), Vera (analysis_route), Karen (при необходимости)
 **Документы:** route_architecture.md §4–5, client_onboarding_experience.md §8–9
@@ -224,8 +224,8 @@ Python Method Digital Rehabilitation Center — это:
 **Роль:** Приём анализов. Подготовка для Карена.
 **Ownership:** Analysis collection, document intake, preparation for Karen.
 **Route involvement:** Активируется при intent = analysis_upload на любом этапе.
-**Emotional function:** Структурирование потока медицинских данных. Снижение хаоса от "куда это всё отправлять".
-**Continuity role:** Vera наполняет медицинский слой памяти системы.
+**Emotional function:** Структурирование потока данных и документов участника. Снижение хаоса от "куда это всё отправлять".
+**Continuity role:** Vera наполняет слой памяти системы данными участника.
 
 ### Nadia — Companion & Daily Support
 **Роль:** AI-компаньон. Ежедневная поддержка. Companion layer.
@@ -310,7 +310,7 @@ Python Method Digital Rehabilitation Center — это:
 - Lucky / Hannah: нет прямой памяти — но контекст первого контакта сохраняется
 - Maya: контекст выбора маршрута и оплаты
 - Iris: базовая память онбординга — имя, запрос, состояние, анализы, первые 72h
-- Vera: медицинская память — анализы, даты, факты
+- Vera: память данных — анализы, документы, факты участника
 - Nadia: companion memory — эмоциональные паттерны, ритм маршрута, динамика состояния
 - Karen: escalation context
 - Sarah: recovery context — факт паузы, где остановились
