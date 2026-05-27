@@ -2,7 +2,7 @@
 
 Document Type: Operational Readiness Framework — Master Activation Checklist
 Version: 1.0
-Project: Python Method Digital Rehabilitation Center
+Project: Python Method Center
 Status: Active Reference — Freeze-Safe
 Created: 2026-05-20
 Basis: docs/system_experience_map.md, docs/route_implementation_plan_after_freeze.md, docs/stabilization_freeze_notice.md, docs/route_architecture.md, docs/client_onboarding_experience.md, docs/memory_experience_architecture.md, docs/agent_role_specification.md
@@ -13,7 +13,7 @@ Basis: docs/system_experience_map.md, docs/route_implementation_plan_after_freez
 
 ### Зачем нужен activation discipline
 
-Python Method Digital Rehabilitation Center прошёл через период активной нестабильности (ORCH FATAL серии, Phase 4 Stabilization Freeze). Система была намеренно заморожена — не из страха, а из дисциплины. Это был сознательный выбор: строить архитектуру правильно, а не торопиться ломать production ради функций.
+Python Method Center прошёл через период активной нестабильности (ORCH FATAL серии, Phase 4 Stabilization Freeze). Система была намеренно заморожена — не из страха, а из дисциплины. Это был сознательный выбор: строить архитектуру правильно, а не торопиться ломать production ради функций.
 
 Теперь, когда docs-архитектура сформирована полностью — маршруты, UX, агенты, память, сообщения, system map — система готова к activation. Но activation без discipline — это путь обратно к нестабильности.
 
@@ -680,7 +680,7 @@ Rollback — это не провал. Это дисциплина. Лучше �
 
 ## 15. Final Activation Formula
 
-Python Method Digital Rehabilitation Center должен активироваться:
+Python Method Center должен активироваться:
 
 **Постепенно.** Не all-at-once. Каждая фаза — отдельный шаг, отдельная верификация. Tempo активации определяется стабильностью системы, не желанием закончить быстро.
 
@@ -696,7 +696,7 @@ Python Method Digital Rehabilitation Center должен активироват�
 
 Если ответ "более" — продолжать.
 
-Именно так Python Method Digital Rehabilitation Center переходит из архитектуры в жизнь.
+Именно так Python Method Center переходит из архитектуры в жизнь.
 
 ---
 
