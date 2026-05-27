@@ -1,3 +1,9 @@
+> **[ARCHIVED — PRE-LEGAL-CLEANUP ARCHITECTURE]**
+> Этот документ отражает старую архитектурную концепцию системы до проведения LEGAL-CLEANUP-1/2/3.
+> Не использовать как source-of-truth. Актуальная архитектура: `docs/system_identity_v2.md`
+
+---
+
 # PLAN — Python Method Center
 
 ## Текущая фаза: MVP до оплаты
