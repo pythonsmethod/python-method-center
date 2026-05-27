@@ -713,6 +713,11 @@ async def webhook(request: Request):
         reply = reply.replace("[SEND_OFERTA]", "").strip()
 
     log.info(f"[{contact_id}] <- {reply[:100]}")
+    # RUNTIME-GUARDRAILS-2: HARD STOP enforcement before send
+    _validated_reply = _validate_outgoing_reply(reply, contact_id)
+    if _validated_reply != reply:
+        log.warning("[ORCH S12] unsafe reply replaced by validator safe_reply contact=%s len_before=%d len_after=%d", contact_id, len(reply), len(_validated_reply))
+        reply = _validated_reply
     sent = await send_message(contact_id, reply)
 
     if send_oferta and sent:
@@ -1958,6 +1963,11 @@ async def webhook_v2(request: Request):
         if send_oferta:
             reply = reply.replace("[SEND_OFERTA]", "").strip()
         log.info(f"[SHADOW_MODE] contact={contact_id} <- {reply[:100]}")
+        # RUNTIME-GUARDRAILS-2: HARD STOP enforcement before send (webhook_v2 shadow path)
+        _validated_reply_v2 = _validate_outgoing_reply(reply, contact_id)
+        if _validated_reply_v2 != reply:
+            log.warning("[ORCH S12] unsafe reply replaced by validator safe_reply contact=%s len_before=%d len_after=%d", contact_id, len(reply), len(_validated_reply_v2))
+            reply = _validated_reply_v2
         sent = await send_message(contact_id, reply)
         if send_oferta and sent:
             await send_document(contact_id, OFERTA_URL, caption="Dogovor-oferta Python Method")
