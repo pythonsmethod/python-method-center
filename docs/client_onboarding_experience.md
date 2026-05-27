@@ -2,7 +2,7 @@
 
 **Document Type:** UX Architecture — Client Journey Design
 **Version:** 1.0
-**Project:** Python Method Digital Rehabilitation Center
+**Project:** Python Method Center
 **Status:** Active Reference
 **Created:** 2026-05-20
 
@@ -14,7 +14,7 @@ Onboarding is not a formality. It is the first structural contact between a pers
 
 ### Why onboarding exists
 
-The people who arrive at the Python Method Digital Rehabilitation Center are not casual visitors. They arrive with a history: diagnoses received, treatments attempted, specialists consulted. Many of them have already been through systems that felt indifferent, rushed, or clinical. Some are arriving with a specific disease. Some are accompanying a loved one. Some are exhausted. Some are scared.
+The people who arrive at the Python Method Center are not casual visitors. They arrive with a history: diagnoses received, treatments attempted, specialists consulted. Many of them have already been through systems that felt indifferent, rushed, or clinical. Some are arriving with a specific disease. Some are accompanying a loved one. Some are exhausted. Some are scared.
 
 The onboarding experience exists to answer one question before the person even asks it: *am I in the right place, and will someone actually pay attention to me here?*
 
@@ -453,5 +453,5 @@ That is the experience the system exists to create.
 ---
 
 *Document type: UX Architecture — Client Journey Design*
-*Python Method Digital Rehabilitation Center | Version 1.0 | 2026-05-20*
+*Python Method Center | Version 1.0 | 2026-05-20*
 *No medical claims. No outcome guarantees. Accompaniment only.*
