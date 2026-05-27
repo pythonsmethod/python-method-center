@@ -1,129 +1,120 @@
-# DB Write Ownership Matrix
+# Ownership Matrix
+# Python Method Center — Canonical State Ownership
 
-## Purpose
+**Document type:** Canonical governance record
+**Status:** ACTIVE — Phase 4
+**Authority:** Biblia System — Section 40.2 (Single Source of Truth Rule)
+**Effective:** 2026-05-27
 
-This document is the **canonical governance record** of which runtime modules are
-authorised to write to production database tables. It must be updated whenever a
-new `INSERT`, `UPDATE`, or `DELETE` path is introduced in any module.
+This document is the single source of truth for state field ownership across all runtime modules, agents, and background tasks.
+It governs both runtime application state and database write access.
+It must be updated in the same commit as any change that introduces a new writer to any tracked field.
 
-## Update Rules
+---
 
-1. Any developer adding a new `UPDATE`/`INSERT` on a tracked table **must** add a
-2.    row to this matrix in the same commit.
-3.2. No module may write to a table column it does not own without explicit review.
-  3. Column-ownership conflicts (two modules updating the same column) require an
-  4.    architectural review before merge.
-  5.4. This file is reviewed on every deploy that touches `orchestrator_core.py`,
-       `agents.py`, or any `migrate_*.sql` file.
+## Section 1 — Runtime State Ownership
 
-    ---
+### 1.1 route_state
 
-    > ⚠️ **GOVERNANCE WARNING**
-    > **No new writer may be added to `pm_client_profiles` or any tracked table without
-    > updating this matrix.** Violations introduce undetected schema drift and silent
-    > analytics corruption. This warning applies to all contributors and all phases.
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `route_engine.py` |
+| **Allowed Writers** | `route_engine.py` only |
+| **Allowed Readers** | `orchestrator_core.py`, `agents.py`, `dashboard_data.py`, `context_engine.py`, `risk_engine.py` |
+| **Forbidden Writers** | `dashboard_data.py`, `agents.py`, AI agent prompts, any new module without explicit amendment to this document |
+| **Source of Truth** | `pm_client_profiles.last_active_route` (persisted), `route_engine.py` (runtime) |
+| **Conflict Rule** | If any module other than `route_engine.py` writes `route_state`, the write is invalid. Requires architectural review before merge. |
 
-    ---
+---
 
-    ## Section 2 — Table Write Ownership
+### 1.2 risk_score
 
-    ### Table: `pm_client_profiles`
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `risk_engine.py` |
+| **Allowed Writers** | `risk_engine.py` only |
+| **Allowed Recalculators** | `risk_engine.py` only. No module may recalculate or override `risk_score` independently. |
+| **Allowed Readers** | `orchestrator_core.py`, `agents.py`, `escalation_engine.py`, `dashboard_data.py`, `context_engine.py` |
+| **Forbidden Writers** | `dashboard_data.py`, `agents.py`, AI agent prompts, any inline calculation in `main.py` or `orchestrator_core.py` |
+| **Source of Truth** | `pm_risk_predictions` table (persisted), `risk_engine.py` (runtime) |
+| **Conflict Rule** | If `risk_score` is calculated outside `risk_engine.py`, it is an unauthorised write. Requires immediate rollback. |
 
-    | Module | Columns Written | Trigger | Write Frequency | Risk Level |
-    |---|---|---|---|---|
-    | `orchestrator_core.py` | `long_term_rehabilitation_state`, `longitudinal_stability_score`, `rehabilitation_resilience_score`, `last_active_route`, `last_active_agent` | Per webhook (post-response) | Per message | 🔴 HIGH — core pipeline writer |
-    | `clinical_continuity_engine.py` | `continuity_state`, `continuity_score`, `continuity_gap_detected`, `stage_transition_risk` | Per webhook (async task) | Per message | 🟡 MEDIUM — async, non-blocking |
-    | `rehabilitation_route_simulation.py` | `route_simulation_state`, `simulation_stability_score`, `continuity_recovery_probability`, `pacing_stabilization_effect`, `overload_mitigation_effect` | Background / per webhook | Per eval cycle | 🟡 MEDIUM |
-    | `rehabilitation_state_machine.py` | `rehabilitation_state`, `rehabilitation_stage`, `previous_rehabilitation_state` | Per webhook (async task) | Per message | 🟡 MEDIUM |
-    | `trajectory_intelligence_engine.py` | `trajectory_state`, `trajectory_score`, `trajectory_direction` | Per webhook (async task) | Per message | 🟡 MEDIUM |
-    | `dynamic_pacing_intelligence.py` | `pacing_state`, `pacing_score`, `pacing_stability_score` | Per webhook (async task) | Per message | 🟡 MEDIUM |
-    | `multi_stage_orchestration_engine.py` | `orchestration_state`, `current_primary_stage`, `active_stage_count` | Per webhook (async task) | Per message | 🟡 MEDIUM |
-    | `expert_load_balancing_engine.py` | `expert_load_state`, `support_congestion_score`, `escalation_queue_pressure` | Background poll | Every N minutes | 🟢 LOW — background only |
-    | `central_cognitive_orchestrator.py` | `system_coherence_state`, `dominant_operational_priority`, `governance_conflict_detected` | Background poll | Every N minutes | 🟢 LOW — background only |
-    | `adaptive_rehabilitation_strategy.py` | `adaptive_strategy_state`, `recommended_continuity_strategy`, `strategy_confidence_score` | Background / per webhook | Per eval cycle | 🟢 LOW |
-    | `recovery_policy_engine.py` | `silence_respect` | Policy enforcement | Event-driven | 🟢 LOW |
-    | `silent_user_scanner.py` | Scan tracking fields (last_scan_at, scan_count) | Background scan loop | Periodic | 🟢 LOW — observability only |
-    | `memory_compressor.py` | Compression metadata fields | Post-compression | Triggered | 🟢 LOW |
-    | `proactive_message_dispatcher.py` | Last proactive send fields | Post-send | Event-driven | 🟢 LOW |
-    | `memory_engine.py` | `last_contact_at`, `total_sessions`, `total_messages` | Per webhook | Per message | 🟡 MEDIUM — high frequency |
-    | `risk_predictor.py` (via `pm_risk_predictions`) | Writes to separate table, reads `pm_client_profiles` | Async | Per user | 🟡 MEDIUM |
+---
 
-    > **Column Ownership Rule:** Each column in `pm_client_profiles` must be owned by
-    > exactly one writer module. If two modules need to update the same column, one
-    > must be designated the **authoritative writer** and the other must use a read
-    > path only.
+### 1.3 escalation_state
 
-    ---
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `escalation_engine.py` |
+| **Who May Open Escalation** | `escalation_engine.py` only, triggered by `risk_engine.py` threshold breach or explicit operator action |
+| **Who May Close Escalation** | `escalation_engine.py` only, after explicit resolution confirmed |
+| **Who Is Notified** | Configured notification targets (Telegram operator channel). Notification logic lives in `escalation_engine.py`. |
+| **Allowed Readers** | `orchestrator_core.py`, `agents.py`, `dashboard_data.py` |
+| **Forbidden Writers** | `dashboard_data.py`, AI agent prompts, `orchestrator_core.py` directly |
+| **Conflict Rule** | Escalation state may not be modified by orchestrator or agent logic. Any such path requires architectural review. |
 
-    ### Table: `pm_center_continuity_metrics`
+---
 
-    | Module | Operation | Trigger | Notes |
-    |---|---|---|---|
-    | `meta_continuity_intelligence.py` | `INSERT` | Background loop (every 10 min) | **Sole writer.** Read-only on `pm_client_profiles`. |
-    | `dashboard_data.py` | `SELECT` | Dashboard API call | Reader only. |
+### 1.4 context_package
 
-    ---
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `context_engine.py` |
+| **Who Assembles** | `context_engine.py` only |
+| **Allowed Readers** | `agents.py`, `orchestrator_core.py`, any engine that receives `context_package` as input parameter |
+| **Who Must Not Mutate** | Receiving agents and engines must treat `context_package` as immutable input. Mutation is forbidden. |
+| **Forbidden Writers** | `dashboard_data.py`, AI agent prompts, `agents.py` |
+| **Conflict Rule** | If an agent modifies `context_package` in place, it is a mutation violation. The modified copy must not be persisted. |
 
-    ### Table: `pm_institutional_memory`
+---
 
-    | Module | Operation | Trigger | Notes |
-    |---|---|---|---|
-    | `institutional_memory_intelligence.py` | `INSERT` | Background loop (every 30 min) | **Sole writer.** |
-    | `dashboard_data.py` | `SELECT` | Dashboard API call | Reader only. |
+### 1.5 memory_layers
 
-    ---
+Memory is split into five distinct layers. Each has its own canonical owner. Layers must not be merged or cross-written.
 
-    ### Table: `pm_runtime_health`
+| Layer | Canonical Owner | Allowed Writers | Allowed Readers | Forbidden Writers |
+|---|---|---|---|---|
+| **current_session_history** | `memory_engine.py` | `memory_engine.py` | `context_engine.py`, `agents.py` | `dashboard_data.py`, AI prompts |
+| **short_term_memory** | `memory_engine.py` | `memory_engine.py` | `context_engine.py`, `orchestrator_core.py` | `dashboard_data.py`, AI prompts |
+| **active_stage_memory** | `memory_engine.py` | `memory_engine.py` | `agents.py`, `context_engine.py` | `dashboard_data.py`, AI prompts |
+| **long_term_timeline** | `memory_engine.py` | `memory_engine.py` only | `context_engine.py`, `dashboard_data.py` (read) | Any direct inline write from `main.py` or agents |
+| **institutional_memory** | `institutional_memory_intelligence.py` | `institutional_memory_intelligence.py` only | `dashboard_data.py` (read), `context_engine.py` | All other modules |
 
-    | Module | Operation | Trigger | Notes |
-    |---|---|---|---|
-    | `runtime_supervisor.py` | `INSERT` | Monitoring loop (`_HEALTH_INTERVAL_S`) | **Sole writer.** |
-    | `dashboard_data.py` | `SELECT` | Dashboard API call | Reader only. |
+**Rule:** No memory layer may be written by an AI agent prompt. Memory is a runtime concern. Prompts are stateless consumers of context.
 
-    ---
+---
 
-    ### Table: `shadow_metrics`
+### 1.6 shadow_metrics
 
-    | Module | Operation | Trigger | Notes |
-    |---|---|---|---|
-    | `main.py` (inline) | `CREATE TABLE` + `INSERT` | Startup + per webhook | Created and written in `main.py` directly. Architectural debt: should be extracted. |
-    | `continuity_intelligence.py` | `SELECT` | Per message | Reader only. |
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `shadow_metrics_engine.py` (target). Current interim: `main.py` (known architectural debt) |
+| **Allowed Writers** | `shadow_metrics_engine.py` after extraction. Until then: `main.py` only by explicit exception. |
+| **Allowed Readers** | `dashboard_data.py` (read only), `continuity_intelligence.py` (read only) |
+| **Dashboard Boundary** | `dashboard_data.py` reads `shadow_metrics`. It must not write, aggregate, or transform them. |
+| **Forbidden Writers** | `dashboard_data.py`, AI agent prompts, any new module until extraction is complete |
+| **Debt Note** | `shadow_metrics` table creation and insert are currently inline in `main.py`. Must be extracted to `shadow_metrics_engine.py` in a dedicated refactor phase. |
 
-    ---
+---
 
-    ### Table: `pm_risk_predictions`
+### 1.7 dashboard_data
 
-    | Module | Operation | Trigger | Notes |
-    |---|---|---|---|
-    | `risk_predictor.py` | `INSERT … ON CONFLICT DO UPDATE` | Async, per user | **Sole writer.** Upsert pattern. |
-    | `dashboard_data.py` | `SELECT` | Dashboard API call | Reader only. |
-    | `recovery_engine.py` | `SELECT` | Recovery workflow | Reader only. |
+| Property | Value |
+|---|---|
+| **Module** | `dashboard_data.py` |
+| **Role** | Read-only data layer. No exceptions. |
+| **Allowed Operations** | SELECT queries only |
+| **Forbidden Operations** | INSERT, UPDATE, DELETE, any state mutation, any business logic execution |
+| **Forbidden Roles** | Not an orchestrator. Not a source of truth. Does not trigger state changes. |
+| **Enforcement** | Any PR adding write methods to `dashboard_data.py` is rejected without exception. |
 
-    ---
+---
 
-    ## Section 3 — Background Loop Registry
+### 1.8 payment_state
 
-    | Loop | Location | Start Delay | Cycle Interval | Target Table | Sole Writer? |
-    |---|---|---|---|---|---|
-    | `_meta_continuity_loop()` | `main.py` | 300 s | 600 s | `pm_center_continuity_metrics` | ✅ Yes |
-    | `_init_institutional_memory_loop()` | `main.py` | 600 s | 1800 s (error retry) | `pm_institutional_memory` | ✅ Yes |
-    | `_monitoring_loop()` | `runtime_supervisor.py` | 0 s | `_HEALTH_INTERVAL_S` | `pm_runtime_health` | ✅ Yes |
-    | `start_scheduled_loop()` | `silent_user_scanner.py` | Configurable | Configurable | `pm_client_profiles` (scan fields) | ✅ Yes |
-    | Queue worker | `async_queue.py` | 0 s | `_POLL_INTERVAL_S` | `pm_queue_jobs` | Shared |
-
-    ---
-
-    ## Governance Notes
-
-    - **`pm_client_profiles` has 16+ concurrent writers** — the highest risk table in the system.
-      No ORM or write coordinator exists. Each module owns distinct column sets; this
-        must be enforced by policy (this document) until a write coordinator is implemented.
-        - **`shadow_metrics` table creation is inline in `main.py`** — a known architectural debt item.
-          It should be extracted to a dedicated migration file and module in a future phase.
-          - **No migration registry table exists** as of Phase 4. A `schema_migrations` table
-            is recommended before the next module addition.
-
-            ---
-
-            _Last updated: 2026-05-17 | Phase 4 Stabilization_
-            _Maintainer: architecture governance review_
+| Property | Value |
+|---|---|
+| **Canonical Owner** | `payment_engine.py` |
+| **Who Writes paid/unpaid** | `payment_engine.py` only, triggered by confirmed payment event |
+| **Allowed Readers** | `orchestrator_core.py`, `agents.py`, `dashboard_data.py`, `route_engine.py` |
+# TEST
