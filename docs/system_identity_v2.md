@@ -145,6 +145,10 @@ AI-агенты центра НИКОГДА не используют:
 - PHASE LEGAL-CLEANUP-2: Document layer cleanup
 - PHASE LEGAL-CLEANUP-3: Identity consolidation
 
+**Спутниковые документы (семантические регуляторы):**
+- `docs/forbidden_semantic_patterns.md` — 7 категорий semantic drift, которых надо избегать
+- `docs/approved_system_language.md` — одобренный язык и притяжение системы
+
 **Следующие документы подчиняются этой идентичности:**
 - `docs/biblia_section_23_ai_logic.md`
 - `docs/language_semantic_core_L1.md`
