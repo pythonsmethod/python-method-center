@@ -2,7 +2,7 @@
 
 **Document Type:** Approved Message Patterns — Russian Language
 **Version:** 1.0
-**Project:** Python Method Digital Rehabilitation Center
+**Project:** Python Method Center
 **Linked:** docs/client_onboarding_experience.md · docs/route_architecture.md
 **Status:** Active Reference
 **Created:** 2026-05-20
@@ -94,7 +94,7 @@ Message library существует затем, чтобы каждое соо�
 
 > Конечно, расскажу.
 >
-> Python Method Digital Rehabilitation Center — это пространство, где человек получает индивидуальное сопровождение. Не курс, не группа, не база знаний. Живая работа с Кареном Джангиряном — специалистом по методу Python — и постоянная поддержка AI-системы между его ответами.
+> Python Method Center — это пространство, где человек получает индивидуальное сопровождение. Не курс, не группа, не база знаний. Живая работа с Кареном Джангиряном — специалистом по методу Python — и постоянная поддержка AI-системы между его ответами.
 >
 > Центр работает с людьми, которые столкнулись со сложными состояниями здоровья и ищут индивидуальный маршрут — не стандартный протокол.
 >
@@ -118,7 +118,7 @@ Message library существует затем, чтобы каждое соо�
 
 ### 4.1 Объяснение центра
 
-> Python Method Digital Rehabilitation Center — это не платформа и не сервис в обычном смысле.
+> Python Method Center — это не платформа и не сервис в обычном смысле.
 >
 > Здесь работают два слоя. Первый — Карен Джангирян, специалист по методу Python. Он работает с вами лично: изучает ваше состояние, ваши анализы, ваш путь. Отвечает в Telegram — голосом и текстом.
 >
@@ -643,7 +643,7 @@ Message library существует затем, чтобы каждое соо�
 ### 13.4 Простыня текста
 
 **Плохо:**
-> Python Method Digital Rehabilitation Center — это инновационная платформа, сочетающая передовые технологии искусственного интеллекта с живым сопровождением специалиста по методу Python, позволяющая клиентам получать... [ещё 10 предложений]
+> Python Method Center — это инновационная платформа, сочетающая передовые технологии искусственного интеллекта с живым сопровождением специалиста по методу Python, позволяющая клиентам получать... [ещё 10 предложений]
 
 **Правильно:**
 > Python Method — это сопровождение человека в сложной ситуации со здоровьем. Живой специалист Карен и AI-система рядом.
@@ -811,6 +811,6 @@ Message library существует затем, чтобы каждое соо�
 > > > > > > > >
 > > > > > > > > ---
 > > > > > > > >
-> > > > > > > > *Language Refactor L1 | Python Method Digital Rehabilitation Center | 2026-05-26 | Phase L1 — Global Dangerous Language Replacement*
-*Client Message Library | Python Method Digital Rehabilitation Center*
+> > > > > > > > *Language Refactor L1 | Python Method Center | 2026-05-26 | Phase L1 — Global Dangerous Language Replacement*
+*Client Message Library | Python Method Center*
 *Version 1.0 · 2026-05-20 · Freeze-safe documentation · No code changes · No deployment*
