@@ -2,7 +2,7 @@
 
 Document Type: AI Operating Experience Framework — Master Navigation Document
 Version: 1.0
-Project: Python Method Digital Rehabilitation Center
+Project: Python Method Center
 Status: Active Reference — Freeze-Safe
 Created: 2026-05-20
 Basis: docs/route_architecture.md, docs/client_onboarding_experience.md, docs/client_message_library.md, docs/agent_role_specification.md, docs/memory_experience_architecture.md, docs/route_implementation_plan_after_freeze.md, docs/stabilization_freeze_notice.md
@@ -13,7 +13,7 @@ Basis: docs/route_architecture.md, docs/client_onboarding_experience.md, docs/cl
 
 ### Зачем нужен master navigation document
 
-Python Method Digital Rehabilitation Center к 2026-05-20 сформировал зрелую, многослойную документационную архитектуру. Каждый слой описывает свою часть системы: UX-путь клиента, сообщения агентов, спецификацию ролей, архитектуру памяти, план имплементации. Но ни один документ не объединяет всё это в единую карту.
+Python Method Center к 2026-05-20 сформировал зрелую, многослойную документационную архитектуру. Каждый слой описывает свою часть системы: UX-путь клиента, сообщения агентов, спецификацию ролей, архитектуру памяти, план имплементации. Но ни один документ не объединяет всё это в единую карту.
 
 Данный документ — System Experience Map — является master navigation layer всей системы. Он не дублирует другие документы. Он объясняет, как они связаны, где проходят границы слоёв, что уже реализовано, что запланировано и как всё это вместе образует единую систему сопровождения.
 
@@ -41,7 +41,7 @@ System Experience Map — это карта для навигации, прин�
 
 ## 2. System Vision Layer
 
-### Что такое Python Method Digital Rehabilitation Center
+### Что такое Python Method Center
 
 Python Method Center — это цифровая среда персонального сопровождения. Это не:
 
@@ -50,7 +50,7 @@ Python Method Center — это цифровая среда персональн
 - FAQ. FAQ даёт информацию. Центр даёт continuity.
 - CRM. CRM управляет воронкой. Центр строит отношения.
 
-Python Method Digital Rehabilitation Center — это:
+Python Method Center — это:
 
 **Digital accompaniment environment.** Структурированное цифровое пространство, в котором человек может безопасно двигаться по маршруту сопровождения здоровья. Не изолированные ответы — а последовательный путь с памятью, контекстом и присутствием.
 
@@ -522,7 +522,7 @@ Stabilization Freeze (2026-05-19) объявлен после серии ORCH FA
 
 ## 14. Final System Formula
 
-Python Method Digital Rehabilitation Center должен ощущаться:
+Python Method Center должен ощущаться:
 
 **Как единая система сопровождения.** Не как сборка несвязанных модулей, которые "вроде работают вместе". Как живая, связная структура, где каждый элемент знает своё место.
 
@@ -538,7 +538,7 @@ Continuity: система помнит. Путь не начинается за
 Navigation: система помогает человеку понять, где он и куда движется.
 Accompaniment: система рядом. Не только в момент запроса — но как фоновое присутствие, которое держит нить.
 
-Именно это отличает Python Method Digital Rehabilitation Center от чата, бота, FAQ и CRM.
+Именно это отличает Python Method Center от чата, бота, FAQ и CRM.
 
 ---
 
