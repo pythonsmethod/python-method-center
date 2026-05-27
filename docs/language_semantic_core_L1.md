@@ -2,7 +2,7 @@
 
 **Document Type:** Semantic Identity Rules — Runtime Language Override
 **Version:** L1.0
-**Project:** Python Method Digital Rehabilitation Center
+**Project:** Python Method Center
 **Priority:** Overrides agent prompts on language/tone conflicts
 **Linked:** docs/client_message_library.md §15 · docs/biblia_section_23_ai_logic.md
 **Status:** Active Override
@@ -207,5 +207,5 @@ AI must never describe, explain, or characterize Karen's method, formula, or wor
 
 ---
 
-*Language Semantic Core L1 | Python Method Digital Rehabilitation Center | 2026-05-26*
+*Language Semantic Core L1 | Python Method Center | 2026-05-26*
 *Phase L1 — Global Dangerous Language Replacement | language-only change, no architecture impact*
