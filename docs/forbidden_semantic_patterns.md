@@ -1,3 +1,11 @@
+> [!CAUTION]
+> **QUARANTINE NOTICE — RUNTIME-GUARDRAILS-1 (2026-05-27)**
+> This document contains **FORBIDDEN examples** for governance reference only.
+> Do NOT copy any phrase from the "Примеры (ЗАПРЕЩЕНО)" sections into agent prompts, system context, or AI input.
+> All examples below are documented precisely because they trigger `_CAPSULE_FORMULA_PATTERNS`,
+> `MEDICAL_EXTENDED_PATTERNS`, `WELLNESS_DRIFT_PATTERNS` and `KAREN_DOWNGRADE_PATTERNS` in `response_validator.py`.
+> **For approved wording, see: `docs/approved_system_language.md`**
+
 # Forbidden Semantic Patterns — Semantic Drift Prevention Layer
 
 **Document Type:** Semantic Governance — Drift Prevention
