@@ -87,11 +87,15 @@ _CAPSULE_FORMULA_PATTERNS = [
     r"состав\s+под\s+\w+",                    # any "состав под X" (вашу, конкретного, etc.)
     r"подбирает\b[^.]{0,30}(состав|протокол|формул|капсул|дозиров|компонент)",
     r"созда[её]т\b[^.]{0,30}состав",          # "Карен создаёт состав" / "создаёт индивидуальный состав"
-    r"схема\s+при[её]ма",                     # "схема приёма" — only about capsules
+    r"схем[аы]\s+при[её]ма",                  # "схема приёма/приема" — broadened (RUNTIME-GUARDRAILS-1)
     r"персональная\s+формул",                 # "персональная формула под вашу ситуацию"
     r"ваш(а|у)\s+формул",                     # "ваша формула / вашу формулу"
     r"индивидуальный\s+протокол\s+капсул",    # explicit phrase from Anna's screenshot
     r"золоты(е|х)\s+капсул",                  # "золотые капсулы" — per §23.14
+    # ── PHASE RUNTIME-GUARDRAILS-1: semantic synonym expansion (2026-05-27)
+    r"персональн(ый|ая)\s+протокол\s+капсул",   # "персональный протокол капсул"
+    r"персональн(ый|ая)\s+(состав|формул)",       # "персональный/ая состав / формула"
+    r"схем[аы]\s+лечения",                        # "схема лечения" — medical synonym
 ]
 
 # Safe fallback — verbatim from Biblia §23.5 (docs/biblia_section_23_ai_logic.md).
@@ -357,10 +361,11 @@ class ResponseValidator:
                     safe_reply = safe_reply.replace(marker, "")
 
             # -------------------------------------------------------------------
-            # PHASE 3A SHADOW MODE — semantic detection active, no user-visible rewrites.
-            # Runs check_pattern_with_context() for governance pattern groups.
-            # Results: adds issues + calls record_semantic_event().
-            # Does NOT modify safe_reply. Does NOT modify return dict.
+            # PHASE 3A — ACTIVE REWRITE (HIGH) + SHADOW MODE (SOFT) — RUNTIME-GUARDRAILS-1
+            # HIGH severity groups (MEDICAL_EXTENDED, WELLNESS_DRIFT, KAREN_DOWNGRADE):
+            #   → matched + not suppressed → modifies safe_reply via _build_recovery_reply()
+            # SOFT severity groups: log + record only, no safe_reply change.
+            # Runs check_pattern_with_context() for all governance pattern groups.
             # -------------------------------------------------------------------
             try:
                 _shadow_contact_id = str(context_package.get("contact_id", session.get("contact_id", "unknown")))
@@ -398,6 +403,18 @@ class ResponseValidator:
                                 _issue_key = f"{_vtype}: {_ctx_result['match_text']}"
                                 if _issue_key not in issues:
                                     issues.append(_issue_key)
+                                # RUNTIME-GUARDRAILS-1: ACTIVE REWRITE for promoted HIGH-severity groups
+                                _ACTIVE_REWRITE_TYPES = {"medical_extended", "wellness_drift", "karen_downgrade"}
+                                if _vtype in _ACTIVE_REWRITE_TYPES:
+                                    _active_recovery = _build_recovery_reply(
+                                        _vtype, _shadow_agent, _shadow_route, safe_reply, "RS-3"
+                                    )
+                                    if _active_recovery:
+                                        safe_reply = _active_recovery
+                                        log.warning(
+                                            "[SEMANTIC][ACTIVE] type=%s agent=%s route=%s → safe_reply rewritten",
+                                            _vtype, _shadow_agent, _shadow_route,
+                                        )
                                 if _severity == "HARD":
                                     log.info(
                                         "[SEMANTIC][SHADOW] type=%s suppressed=False severity=HARD agent=%s route=%s match=%s",
