@@ -33,36 +33,45 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;display:flex;ali
 .mob-menu{display:none;position:fixed;top:64px;left:0;right:0;z-index:99;background:rgba(7,7,7,.97);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);flex-direction:column;padding:18px 24px}
 .mob-menu a{color:var(--txt);text-decoration:none;font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:13px 0;border-bottom:1px solid var(--line)}
 .mob-menu.open{display:flex}
-.hero{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;padding-top:64px}
-.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 70% 35%,rgba(201,162,75,.08),transparent 60%),var(--ink)}
-.hero-grid-bg{position:absolute;inset:0;opacity:.025;background-image:repeating-linear-gradient(0deg,var(--gold) 0 1px,transparent 1px 44px),repeating-linear-gradient(90deg,var(--gold) 0 1px,transparent 1px 44px)}
-.hero-inner{position:relative;z-index:2;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center;width:100%}
-.h-eyebrow{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.42em;color:var(--gold);text-transform:uppercase;margin-bottom:20px}
-.h-title{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(36px,5.2vw,64px);line-height:1.06;color:var(--cream);margin-bottom:14px}
-.h-tagline{font-family:'Cinzel',serif;font-size:clamp(12px,1.4vw,15px);letter-spacing:.12em;color:var(--gold);text-transform:uppercase;margin-bottom:18px;line-height:1.5}
-.h-sub{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(15px,1.9vw,20px);color:var(--gold-lt);margin-bottom:22px;font-weight:400}
-.h-desc{font-size:15.5px;line-height:1.75;color:var(--txt);max-width:460px;margin-bottom:34px;opacity:.85}
-.h-btns{display:flex;gap:14px;flex-wrap:wrap}
+
+/* HERO PORTAL */
+.hero{min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;padding:104px 0 60px;text-align:center}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 60% 70% at 50% 42%,rgba(201,162,75,.10),transparent 62%),linear-gradient(180deg,#0a0a0b,#070707)}
+.hero-grid-bg{position:absolute;inset:0;opacity:.03;background-image:repeating-linear-gradient(0deg,var(--gold) 0 1px,transparent 1px 46px),repeating-linear-gradient(90deg,var(--gold) 0 1px,transparent 1px 46px)}
+.portal{position:relative;z-index:2;width:100%;max-width:760px;margin:0 auto;padding:0 24px}
+.portal-arch{position:relative;margin:0 auto;display:flex;align-items:stretch;justify-content:center;gap:0}
+.col{position:relative;width:62px;flex:0 0 62px;border-radius:6px 6px 0 0;background:linear-gradient(90deg,#15130d,#241d10,#15130d);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:18px 0;gap:16px;box-shadow:inset 0 0 24px rgba(0,0,0,.6)}
+.col::before{content:'';position:absolute;top:-14px;left:-6px;right:-6px;height:14px;background:linear-gradient(90deg,#15130d,#2a2110,#15130d);border:1px solid var(--line);border-bottom:none;border-radius:4px 4px 0 0}
+.col-glyph{font-size:21px;color:var(--gold);opacity:.62;line-height:1}
+.portal-center{position:relative;flex:1;display:flex;align-items:center;justify-content:center;min-height:340px}
+.portal-arch-top{position:absolute;top:0;left:8%;right:8%;height:120px;border:1px solid var(--line);border-bottom:none;border-radius:50% 50% 0 0/100% 100% 0 0;background:radial-gradient(ellipse 80% 120% at 50% 100%,rgba(201,162,75,.10),transparent 70%)}
+.portal-glow{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(201,162,75,.22),transparent 66%);filter:blur(8px)}
+.portal-eye{position:absolute;top:30px;left:50%;transform:translateX(-50%);font-size:34px;color:var(--gold);opacity:.78;z-index:3;text-shadow:0 0 22px rgba(201,162,75,.5)}
+.hero-copy{position:relative;z-index:4;padding:0 10px}
+.h-eyebrow{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.42em;color:var(--gold);text-transform:uppercase;margin-bottom:16px}
+.h-title{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(34px,6vw,68px);line-height:1.04;color:var(--cream);margin-bottom:16px}
+.h-tagline{font-family:'Cinzel',serif;font-size:clamp(12px,1.5vw,16px);letter-spacing:.14em;color:var(--gold);text-transform:uppercase;line-height:1.9;margin-bottom:30px}
+.h-tagline span{display:inline}
+.h-btns{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
 .btn{display:inline-flex;align-items:center;gap:9px;padding:15px 30px;font-family:'Cinzel',serif;font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;text-decoration:none;cursor:pointer;border:none;transition:all .3s}
 .btn-g{background:linear-gradient(135deg,var(--gold-dk),var(--gold),var(--gold-lt));color:var(--ink);box-shadow:0 6px 26px rgba(201,162,75,.26)}
 .btn-g:hover{transform:translateY(-2px);box-shadow:0 10px 34px rgba(201,162,75,.4)}
 .btn-o{background:transparent;color:var(--gold);border:1px solid var(--gold)}
 .btn-o:hover{background:rgba(201,162,75,.1);transform:translateY(-2px)}
-.karen{position:relative;display:flex;flex-direction:column;align-items:center}
-.karen-frame{position:relative;width:300px;max-width:78vw;aspect-ratio:3/3.7;border:1px solid var(--line);border-radius:4px;background:linear-gradient(165deg,var(--ink3),var(--ink2));overflow:hidden;display:flex;align-items:flex-end;justify-content:center;box-shadow:0 24px 60px rgba(0,0,0,.5)}
-.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 28%,rgba(201,162,75,.14),transparent 65%);z-index:2;pointer-events:none}
-.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none;z-index:3}
-.karen-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%;z-index:1}
-.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.7;z-index:4;text-shadow:0 1px 6px rgba(0,0,0,.6)}
-.karen-cap{margin-top:18px;text-align:center}
-.karen-name{font-family:'Cinzel',serif;font-size:18px;font-weight:700;letter-spacing:.1em;color:var(--cream)}
-.karen-role{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:5px}
-.karen-badge{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:11px;letter-spacing:.05em;color:var(--dim);border:1px solid var(--line);border-radius:30px;padding:5px 13px}
-.dot{width:6px;height:6px;border-radius:50%;background:#4ad07a;box-shadow:0 0 8px #4ad07a}
-.mission{background:var(--ink2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:30px 0}
-.mission-row{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:14px 0}
-.mission-item{font-family:'Cinzel',serif;font-size:clamp(12px,1.3vw,15px);letter-spacing:.16em;text-transform:uppercase;color:var(--gold-lt);padding:0 26px;position:relative;white-space:nowrap}
-.mission-item:not(:last-child)::after{content:'';position:absolute;right:0;top:50%;transform:translateY(-50%);width:5px;height:5px;border-radius:50%;background:var(--gold);opacity:.55}
+.hero-scroll{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:var(--dim);z-index:4;display:flex;flex-direction:column;align-items:center;gap:6px}
+.hero-scroll .ar{font-size:14px;color:var(--gold);animation:bob 1.8s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
+
+/* PHILOSOPHY STRIP */
+.philo{background:var(--ink2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:54px 0}
+.philo-head{text-align:center;margin-bottom:36px}
+.philo-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.philo-item{text-align:center;padding:18px 10px;border:1px solid transparent;border-radius:8px;transition:all .35s}
+.philo-item:hover{border-color:var(--line);background:var(--ink3)}
+.philo-sym{font-size:30px;color:var(--gold);display:block;margin-bottom:12px;filter:drop-shadow(0 0 10px rgba(201,162,75,.3))}
+.philo-t{font-family:'Cinzel',serif;font-size:13.5px;color:var(--gold-lt);letter-spacing:.06em;margin-bottom:5px}
+.philo-d{font-size:11.5px;letter-spacing:.04em;color:var(--dim);line-height:1.5}
+
 section.sec{padding:96px 0;position:relative}
 .sec-ink2{background:var(--ink2)}
 .center{text-align:center}
@@ -78,20 +87,35 @@ section.sec{padding:96px 0;position:relative}
 .step-n{width:58px;height:58px;border-radius:50%;border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:'Cinzel',serif;font-size:18px;font-weight:900;color:var(--gold);background:var(--ink2);box-shadow:0 0 22px rgba(201,162,75,.14)}
 .step-t{font-family:'Cinzel',serif;font-size:14.5px;color:var(--cream);margin-bottom:8px;letter-spacing:.03em}
 .step-d{font-size:12.5px;line-height:1.6;color:var(--dim)}
-.depts{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
-.dept{background:var(--ink3);border:1px solid var(--line);border-radius:6px;padding:28px 24px;transition:all .35s;position:relative;overflow:hidden}
-.dept::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .35s}
-.dept:hover{transform:translateY(-5px);border-color:rgba(201,162,75,.32);background:var(--ink4)}
-.dept:hover::before{opacity:1}
-.dept-ic{font-size:26px;margin-bottom:14px;display:block;color:var(--gold);filter:drop-shadow(0 0 10px rgba(201,162,75,.3))}
-.dept-t{font-family:'Cinzel',serif;font-size:16px;font-weight:600;color:var(--gold-lt);letter-spacing:.04em}
-.dept-d{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin-top:7px}
-.founder{display:grid;grid-template-columns:.7fr 1.3fr;gap:48px;align-items:center}
-.founder .karen{align-items:flex-start}
+
+/* CARD GRID (depts + why) */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:46px}
+.card{background:linear-gradient(165deg,var(--ink3),var(--ink2));border:1px solid var(--line);border-radius:8px;padding:30px 26px;transition:all .35s;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .35s}
+.card::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 0%,rgba(201,162,75,.07),transparent 60%);opacity:0;transition:opacity .35s;pointer-events:none}
+.card:hover{transform:translateY(-6px);border-color:rgba(201,162,75,.34)}
+.card:hover::before,.card:hover::after{opacity:1}
+.card-ic{width:48px;height:48px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--gold);margin-bottom:18px;background:var(--ink2);box-shadow:0 0 18px rgba(201,162,75,.12);filter:drop-shadow(0 0 6px rgba(201,162,75,.25))}
+.card-t{font-family:'Cinzel',serif;font-size:16.5px;font-weight:600;color:var(--gold-lt);letter-spacing:.03em;margin-bottom:9px}
+.card-d{font-size:13px;line-height:1.65;color:var(--dim)}
+
+.founder{display:grid;grid-template-columns:.78fr 1.22fr;gap:54px;align-items:center}
+.founder .karen{position:relative;display:flex;flex-direction:column;align-items:flex-start}
+.karen-frame{position:relative;width:330px;max-width:82vw;aspect-ratio:3/3.7;border:1px solid var(--line);border-radius:4px;background:linear-gradient(165deg,var(--ink3),var(--ink2));overflow:hidden;display:flex;align-items:flex-end;justify-content:center;box-shadow:0 28px 70px rgba(0,0,0,.55)}
+.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 24%,rgba(201,162,75,.14),transparent 65%);z-index:2;pointer-events:none}
+.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none;z-index:3}
+.karen-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 16%;z-index:1}
+.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.7;z-index:4;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .founder-body .s-title{margin-bottom:6px}
-.founder-role{font-family:'Playfair Display',serif;font-style:italic;font-size:18px;color:var(--gold-lt);margin-bottom:18px}
-.cta{text-align:center;background:radial-gradient(ellipse 90% 80% at 50% 50%,rgba(201,162,75,.08),transparent 70%),var(--ink3);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:88px 0}
+.founder-role{font-family:'Playfair Display',serif;font-style:italic;font-size:19px;color:var(--gold-lt);margin-bottom:18px}
+.founder-sig{margin-top:26px;display:inline-flex;align-items:center;gap:10px;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);border-top:1px solid var(--line);padding-top:18px}
+.founder-sig .ankh{color:var(--gold);font-size:16px}
+
+.cta{text-align:center;position:relative;overflow:hidden;background:radial-gradient(ellipse 90% 90% at 50% 40%,rgba(201,162,75,.12),transparent 66%),var(--ink2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:104px 0}
+.cta-eye{font-size:38px;color:var(--gold);opacity:.7;margin-bottom:20px;display:block;text-shadow:0 0 26px rgba(201,162,75,.5)}
 .cta .s-title{margin:0 auto 14px}.cta .gline{margin:18px auto 22px}.cta .s-desc{margin:0 auto 32px}.cta .h-btns{justify-content:center}
+.cta-note{font-family:'Playfair Display',serif;font-style:italic;font-size:16px;color:var(--gold-lt);margin-top:28px;opacity:.9}
+
 footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28px}
 .f-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px}
 .f-desc{font-size:13px;line-height:1.7;color:var(--dim);margin-top:14px;max-width:320px}
@@ -102,28 +126,28 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 .f-bot p{font-size:12px;color:var(--dim);letter-spacing:.04em}
 .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s,transform .7s}
 .reveal.in{opacity:1;transform:none}
+
 @media(max-width:880px){
 .nav-links{display:none}
 .burger{display:flex}
-.hero-inner{grid-template-columns:1fr;gap:36px;text-align:center}
-.karen{order:-1}
-.h-desc{margin-left:auto;margin-right:auto}
-.h-btns{justify-content:center}
-.mission-item{padding:0 16px;font-size:12px;letter-spacing:.12em}
+.philo-grid{grid-template-columns:repeat(2,1fr);gap:12px}
 .steps{grid-template-columns:1fr 1fr;gap:28px}
-.depts{grid-template-columns:1fr 1fr}
-.founder{grid-template-columns:1fr;gap:32px;text-align:center}
+.cards{grid-template-columns:1fr 1fr}
+.founder{grid-template-columns:1fr;gap:34px;text-align:center}
 .founder .karen{align-items:center}
 .founder .gline{margin-left:auto;margin-right:auto}
+.founder-sig{margin-left:auto;margin-right:auto}
 .f-grid{grid-template-columns:1fr 1fr;gap:28px}
+.col{width:46px;flex-basis:46px}
+.portal-center{min-height:300px}
 }
 @media(max-width:520px){
-.mission-row{gap:10px 0}
-.mission-item{padding:0 12px}
-.mission-item:not(:last-child)::after{display:none}
+.philo-grid{grid-template-columns:1fr}
 .steps{grid-template-columns:1fr}
-.depts{grid-template-columns:1fr}
+.cards{grid-template-columns:1fr}
 .f-grid{grid-template-columns:1fr}
+.col{width:34px;flex-basis:34px}
+.col-glyph{font-size:16px}
 }
 </style>
 </head>
@@ -133,8 +157,8 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 <div class="nav-r">
 <ul class="nav-links">
 <li><a href="#about"><span data-ru>О центре</span><span data-en>About</span></a></li>
-<li><a href="#how"><span data-ru>Как это работает</span><span data-en>How it works</span></a></li>
 <li><a href="#depts"><span data-ru>Отделы</span><span data-en>Departments</span></a></li>
+<li><a href="#why"><span data-ru>Почему мы</span><span data-en>Why us</span></a></li>
 <li><a href="#founder"><span data-ru>Основатель</span><span data-en>Founder</span></a></li>
 </ul>
 <div class="lang" id="lang"><span id="ru" class="on">RU</span><span id="en">EN</span></div>
@@ -143,47 +167,50 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 </nav>
 <div class="mob-menu" id="mobMenu">
 <a href="#about"><span data-ru>О центре</span><span data-en>About</span></a>
-<a href="#how"><span data-ru>Как это работает</span><span data-en>How it works</span></a>
 <a href="#depts"><span data-ru>Отделы</span><span data-en>Departments</span></a>
+<a href="#why"><span data-ru>Почему мы</span><span data-en>Why us</span></a>
 <a href="#founder"><span data-ru>Основатель</span><span data-en>Founder</span></a>
 </div>
 
 <section class="hero" id="top">
 <div class="hero-bg"></div>
 <div class="hero-grid-bg"></div>
-<div class="wrap hero-inner">
+<div class="portal">
+<div class="portal-arch">
+<div class="col"><span class="col-glyph">𓂀</span><span class="col-glyph">𓋹</span><span class="col-glyph">𓊽</span><span class="col-glyph">𓆎</span></div>
+<div class="portal-center">
+<div class="portal-arch-top"></div>
+<div class="portal-glow"></div>
+<span class="portal-eye">𓂀</span>
 <div class="hero-copy">
 <div class="h-eyebrow">☥ Digital Rehabilitation Center ☥</div>
 <h1 class="h-title">PYTHON METHOD<br><span class="gold">CENTER</span></h1>
-<p class="h-tagline"><span data-ru>Мы ведём. Вы восстанавливаетесь. Вместе — к результату.</span><span data-en>We guide. You recover. Together toward results.</span></p>
-<p class="h-sub"><span data-ru>Добро пожаловать в цифровой центр сопровождения.</span><span data-en>Welcome to a digital guidance center.</span></p>
-<p class="h-desc"><span data-ru>Здесь вы получаете понятный маршрут, поддержку и следующий шаг внутри системы Python Method Center.</span><span data-en>Receive a clear path, support, and your next step within the Python Method Center system.</span></p>
+<p class="h-tagline"><span data-ru>Мы ведём. · Вы восстанавливаетесь. · Вместе — к результату.</span><span data-en>We guide. · You recover. · Together toward results.</span></p>
 <div class="h-btns">
-<a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Начать путь</span><span data-en>Start your journey</span></a>
+<a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Войти в центр</span><span data-en>Enter the center</span></a>
 <a href="#about" class="btn btn-o"><span data-ru>Узнать больше</span><span data-en>Learn more</span></a>
 </div>
 </div>
-<div class="karen">
-<div class="karen-frame">
-<span class="karen-glyph">𓂀</span>
-<img class="karen-photo" src="/static/karen.jpg" alt="Karen Pashikyan" loading="lazy">
 </div>
-<div class="karen-cap">
-<div class="karen-name">KAREN PASHIKYAN</div>
-<div class="karen-role"><span data-ru>Основатель метода</span><span data-en>Founder of the Method</span></div>
-<div class="karen-badge"><span class="dot"></span> <span data-ru>Python Method Center</span><span data-en>Python Method Center</span></div>
+<div class="col"><span class="col-glyph">𓁹</span><span class="col-glyph">𓏤</span><span class="col-glyph">𓊽</span><span class="col-glyph">𓆼</span></div>
 </div>
 </div>
-</div>
+<div class="hero-scroll"><span data-ru>Вход</span><span data-en>Enter</span><span class="ar">⌄</span></div>
 </section>
 
-<div class="mission">
-<div class="wrap mission-row">
-<div class="mission-item"><span data-ru>Ясность</span><span data-en>Clarity</span></div>
-<div class="mission-item"><span data-ru>Структура</span><span data-en>Structure</span></div>
-<div class="mission-item"><span data-ru>Сопровождение</span><span data-en>Guidance</span></div>
-<div class="mission-item"><span data-ru>Забота</span><span data-en>Care</span></div>
-<div class="mission-item"><span data-ru>Результат</span><span data-en>Progress</span></div>
+<div class="philo">
+<div class="wrap">
+<div class="philo-head">
+<div class="lbl"><span data-ru>Визуальная философия</span><span data-en>Visual philosophy</span></div>
+<h2 class="s-title" style="font-size:clamp(22px,3vw,32px);margin-bottom:0"><span data-ru>Каждый символ — часть системы</span><span data-en>Every symbol is part of the system</span></h2>
+</div>
+<div class="philo-grid">
+<div class="philo-item"><span class="philo-sym">☥</span><div class="philo-t"><span data-ru>Анх</span><span data-en>Ankh</span></div><div class="philo-d"><span data-ru>Жизнь</span><span data-en>Life</span></div></div>
+<div class="philo-item"><span class="philo-sym">𓂀</span><div class="philo-t"><span data-ru>Глаз Гора</span><span data-en>Eye of Horus</span></div><div class="philo-d"><span data-ru>Наблюдение и сопровождение</span><span data-en>Observation & guidance</span></div></div>
+<div class="philo-item"><span class="philo-sym">𓊽</span><div class="philo-t"><span data-ru>Колонны</span><span data-en>Columns</span></div><div class="philo-d"><span data-ru>Маршрут</span><span data-en>The route</span></div></div>
+<div class="philo-item"><span class="philo-sym">𓆸</span><div class="philo-t"><span data-ru>Лотос</span><span data-en>Lotus</span></div><div class="philo-d"><span data-ru>Обновление</span><span data-en>Renewal</span></div></div>
+<div class="philo-item"><span class="philo-sym">△</span><div class="philo-t"><span data-ru>Пирамида</span><span data-en>Pyramid</span></div><div class="philo-d"><span data-ru>Структура</span><span data-en>Structure</span></div></div>
+</div>
 </div>
 </div>
 
@@ -213,30 +240,37 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 </div>
 </section>
 
-<section class="sec center reveal" id="ai">
-<div class="wrap">
-<div class="lbl"><span data-ru>AI + Человек</span><span data-en>AI + Human guidance</span></div>
-<h2 class="s-title"><span data-ru>Цифровые инструменты и экспертное участие</span><span data-en>Digital tools and human expertise</span></h2>
-<div class="gline"></div>
-<p class="s-desc"><span data-ru>Центр объединяет цифровые инструменты сопровождения и экспертное участие основателя метода.</span><span data-en class="blk">The center combines digital guidance tools with expert human involvement.</span></p>
-<p class="s-desc"><span data-ru>Система помогает сохранять порядок, структуру и непрерывность маршрута.</span><span data-en class="blk">The system helps maintain structure, continuity, and clarity throughout the journey.</span></p>
-</div>
-</section>
-
-<section class="sec sec-ink2 reveal" id="depts">
+<section class="sec reveal" id="depts">
 <div class="wrap">
 <div class="center">
 <div class="lbl"><span data-ru>Отделы центра</span><span data-en>Center departments</span></div>
 <h2 class="s-title"><span data-ru>Структура сопровождения</span><span data-en>Structure of support</span></h2>
 <div class="gline"></div>
 </div>
-<div class="depts">
-<div class="dept"><span class="dept-ic">☥</span><div class="dept-t"><span data-ru>Знакомство</span><span data-en>Welcome</span></div><div class="dept-d">Welcome</div></div>
-<div class="dept"><span class="dept-ic">𓏛</span><div class="dept-t"><span data-ru>Документы</span><span data-en>Documents</span></div><div class="dept-d">Documents</div></div>
-<div class="dept"><span class="dept-ic">𓂀</span><div class="dept-t"><span data-ru>Персональный маршрут</span><span data-en>Personal Route</span></div><div class="dept-d">Personal Route</div></div>
-<div class="dept"><span class="dept-ic">𓋹</span><div class="dept-t"><span data-ru>Сопровождение</span><span data-en>Support</span></div><div class="dept-d">Support</div></div>
-<div class="dept"><span class="dept-ic">𓍝</span><div class="dept-t"><span data-ru>База знаний</span><span data-en>Knowledge Base</span></div><div class="dept-d">Knowledge Base</div></div>
-<div class="dept"><span class="dept-ic">𓊃</span><div class="dept-t"><span data-ru>Связь с центром</span><span data-en>Contact Center</span></div><div class="dept-d">Contact Center</div></div>
+<div class="cards">
+<div class="card"><div class="card-ic">☥</div><div class="card-t"><span data-ru>Знакомство</span><span data-en>Welcome</span></div><p class="card-d"><span data-ru>Первый вход в центр и знакомство с системой сопровождения.</span><span data-en>Your first entry into the center and an introduction to the system.</span></p></div>
+<div class="card"><div class="card-ic">𓏛</div><div class="card-t"><span data-ru>Документы</span><span data-en>Documents</span></div><p class="card-d"><span data-ru>Хранение и упорядочивание материалов вашего маршрута.</span><span data-en>Storage and organization of your route materials.</span></p></div>
+<div class="card"><div class="card-ic">𓂀</div><div class="card-t"><span data-ru>Персональный маршрут</span><span data-en>Personal Route</span></div><p class="card-d"><span data-ru>Индивидуальная траектория, выстроенная под вас.</span><span data-en>An individual trajectory built around you.</span></p></div>
+<div class="card"><div class="card-ic">𓋹</div><div class="card-t"><span data-ru>Сопровождение</span><span data-en>Support</span></div><p class="card-d"><span data-ru>Поддержка на каждом этапе пути, чтобы вы не теряли направление.</span><span data-en>Support at every stage so you never lose direction.</span></p></div>
+<div class="card"><div class="card-ic">𓍝</div><div class="card-t"><span data-ru>База знаний</span><span data-en>Knowledge Base</span></div><p class="card-d"><span data-ru>Структурированные материалы и ответы под рукой.</span><span data-en>Structured materials and answers within reach.</span></p></div>
+<div class="card"><div class="card-ic">𓊃</div><div class="card-t"><span data-ru>Связь с центром</span><span data-en>Contact Center</span></div><p class="card-d"><span data-ru>Прямой канал связи, когда нужен следующий шаг.</span><span data-en>A direct channel when you need the next step.</span></p></div>
+</div>
+</div>
+</section>
+
+<section class="sec sec-ink2 reveal" id="why">
+<div class="wrap">
+<div class="center">
+<div class="lbl"><span data-ru>Почему мы</span><span data-en>Why us</span></div>
+<h2 class="s-title"><span data-ru>Почему Python Method Center</span><span data-en>Why Python Method Center</span></h2>
+<div class="gline"></div>
+</div>
+<div class="cards">
+<div class="card"><div class="card-ic">𓂀</div><div class="card-t"><span data-ru>Ясность</span><span data-en>Clarity</span></div><p class="card-d"><span data-ru>Вы всегда понимаете, где находитесь и каким будет следующий шаг.</span><span data-en>You always understand where you are and what comes next.</span></p></div>
+<div class="card"><div class="card-ic">△</div><div class="card-t"><span data-ru>Структура</span><span data-en>Structure</span></div><p class="card-d"><span data-ru>Маршрут выстроен как система, а не набор разрозненных действий.</span><span data-en>The route is built as a system, not scattered actions.</span></p></div>
+<div class="card"><div class="card-ic">𓋹</div><div class="card-t"><span data-ru>Сопровождение</span><span data-en>Guidance</span></div><p class="card-d"><span data-ru>Рядом на каждом этапе — вы не остаётесь один на один с задачей.</span><span data-en>Alongside you at every stage — you are never left alone.</span></p></div>
+<div class="card"><div class="card-ic">☥</div><div class="card-t"><span data-ru>Забота</span><span data-en>Care</span></div><p class="card-d"><span data-ru>Внимательное отношение к человеку, а не к процессу ради процесса.</span><span data-en>Attentive care for the person, not process for its own sake.</span></p></div>
+<div class="card"><div class="card-ic">𓆸</div><div class="card-t"><span data-ru>Результат</span><span data-en>Progress</span></div><p class="card-d"><span data-ru>Каждый шаг приближает к устойчивому, понятному результату.</span><span data-en>Every step moves you toward steady, tangible progress.</span></p></div>
 </div>
 </div>
 </section>
@@ -252,23 +286,26 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 <div class="founder-body">
 <div class="lbl"><span data-ru>Основатель</span><span data-en>Founder</span></div>
 <h2 class="s-title">Karen Pashikyan</h2>
-<div class="founder-role"><span data-ru>Основатель Python Method</span><span data-en>Founder of the Python Method</span></div>
+<div class="founder-role"><span data-ru>Основатель метода</span><span data-en>Founder of the Method</span></div>
 <div class="gline"></div>
-<p class="s-desc"><span data-ru>Создатель метода Python Method и основатель Python Method Center.</span><span data-en class="blk">Founder of the Python Method and Python Method Center.</span></p>
+<p class="s-desc"><span data-ru>Создатель метода и основатель Python Method Center. Человек, который стоит за системой сопровождения центра.</span><span data-en class="blk">Creator of the method and founder of Python Method Center. The person behind the center's system of guidance.</span></p>
+<div class="founder-sig"><span class="ankh">☥</span> <span data-ru>Python Method Center</span><span data-en>Python Method Center</span></div>
 </div>
 </div>
 </section>
 
 <section class="cta reveal">
 <div class="wrap">
-<div class="lbl">☥ <span data-ru>Начните сегодня</span><span data-en>Start today</span></div>
-<h2 class="s-title"><span data-ru>Начните знакомство с центром<br>уже сегодня</span><span data-en>Start your journey today</span></h2>
+<span class="cta-eye">𓂀</span>
+<div class="lbl"><span data-ru>Вход в систему сопровождения</span><span data-en>Enter the system of guidance</span></div>
+<h2 class="s-title"><span data-ru>Это не просто сайт.<br>Это вход в центр.</span><span data-en>This is not just a website.<br>It is an entry into the center.</span></h2>
 <div class="gline"></div>
-<p class="s-desc"><span data-ru>Сделайте первый шаг внутри системы Python Method Center.</span><span data-en>Take your first step within the Python Method Center system.</span></p>
+<p class="s-desc"><span data-ru>Сделайте первый шаг внутри Python Method Center — и пройдите свой маршрут с ясностью, структурой и сопровождением.</span><span data-en>Take your first step within Python Method Center — and move along your route with clarity, structure, and guidance.</span></p>
 <div class="h-btns">
-<a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Начать путь</span><span data-en>Start your journey</span></a>
+<a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Войти в центр</span><span data-en>Enter the center</span></a>
 <a href="mailto:info@pythonmethod.com" class="btn btn-o"><span data-ru>Написать нам</span><span data-en>Contact us</span></a>
 </div>
+<p class="cta-note"><span data-ru>Мы ведём. Вы восстанавливаетесь. Вместе — к результату.</span><span data-en>We guide. You recover. Together toward results.</span></p>
 </div>
 </section>
 
@@ -283,8 +320,8 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 <h4><span data-ru>Центр</span><span data-en>Center</span></h4>
 <ul>
 <li><a href="#about"><span data-ru>О центре</span><span data-en>About</span></a></li>
-<li><a href="#how"><span data-ru>Как это работает</span><span data-en>How it works</span></a></li>
 <li><a href="#depts"><span data-ru>Отделы</span><span data-en>Departments</span></a></li>
+<li><a href="#why"><span data-ru>Почему мы</span><span data-en>Why us</span></a></li>
 <li><a href="#founder"><span data-ru>Основатель</span><span data-en>Founder</span></a></li>
 </ul>
 </div>
