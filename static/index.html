@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Method — Digital Rehabilitation Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Raleway:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --gold: #C9A84C;
+  --gold-light: #E8C97A;
+  --gold-dark: #8B6914;
+  --gold-glow: rgba(201,168,76,0.3);
+  --black: #0A0A0A;
+  --dark: #111111;
+  --dark2: #1A1A1A;
+  --dark3: #222222;
+  --cream: #F5F0E8;
+  --text: #D4C5A0;
+  --text-dim: #8A7D60;
+  --accent: #C84B2F;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { background: var(--black); color: var(--text); font-family: 'Raleway', sans-serif; overflow-x: hidden; }
+
+/* SCROLLBAR */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--dark); }
+::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+
+/* HIEROGLYPHIC DIVIDER */
+.hieroglyph-divider {
+  text-align: center;
+  color: var(--gold);
+  font-size: 1.4rem;
+  letter-spacing: 0.8rem;
+  opacity: 0.6;
+  margin: 0.5rem 0;
+  user-select: none;
+}
+
+/* NAV */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,10,10,0.92);
+  border-bottom: 1px solid rgba(201,168,76,0.2);
+  backdrop-filter: blur(12px);
+  padding: 0 2rem;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px;
+}
+.nav-logo {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gold);
+  text-decoration: none;
+  letter-spacing: 0.15em;
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.nav-logo span.ankh { font-size: 1.4rem; }
+.nav-links { display: flex; gap: 2rem; list-style: none; }
+.nav-links a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 0.3s;
+}
+.nav-links a:hover { color: var(--gold-light); }
+.nav-cta {
+  background: transparent;
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 0.5rem 1.4rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.3s;
+}
+.nav-cta:hover { background: var(--gold); color: var(--black); }
+
+/* HERO */
+.hero {
+  min-height: 100vh;
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute; inset: 0;
+  background: 
+    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(201,168,76,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 40% at 80% 80%, rgba(139,105,20,0.04) 0%, transparent 50%),
+    var(--black);
+}
+/* Egyptian geometric pattern overlay */
+.hero-pattern {
+  position: absolute; inset: 0;
+  opacity: 0.03;
+  background-image: 
+    repeating-linear-gradient(45deg, var(--gold) 0, var(--gold) 1px, transparent 0, transparent 50%),
+    repeating-linear-gradient(-45deg, var(--gold) 0, var(--gold) 1px, transparent 0, transparent 50%);
+  background-size: 40px 40px;
+}
+/* Sun disc decoration */
+.sun-disc {
+  position: absolute;
+  top: 8%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px; height: 200px;
+  border-radius: 50%;
+  border: 1px solid rgba(201,168,76,0.08);
+  box-shadow:
+    0 0 40px rgba(201,168,76,0.04),
+    inset 0 0 40px rgba(201,168,76,0.02);
+}
+.sun-disc::before {
+  content: '';
+  position: absolute; inset: 15px;
+  border-radius: 50%;
+  border: 1px solid rgba(201,168,76,0.06);
+}
+.sun-disc::after {
+  content: '☀';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2rem;
+  color: rgba(201,168,76,0.15);
+}
+/* Side columns */
+.column-left, .column-right {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 3px;
+  background: linear-gradient(to bottom, transparent, var(--gold-dark) 20%, var(--gold) 50%, var(--gold-dark) 80%, transparent);
+  opacity: 0.12;
+}
+.column-left { left: 5%; }
+.column-right { right: 5%; }
+
+.hero-content {
+  position: relative; z-index: 2;
+  text-align: center;
+  padding: 2rem;
+  max-width: 900px;
+}
+.hero-eyebrow {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.5em;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  opacity: 0.9;
+}
+.hero-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--cream);
+  margin-bottom: 0.5rem;
+  text-shadow: 0 0 60px rgba(201,168,76,0.2);
+}
+.hero-title .gold { color: var(--gold); }
+.hero-subtitle {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(1rem, 2.5vw, 1.6rem);
+  font-weight: 400;
+  color: var(--gold-light);
+  margin-bottom: 1.5rem;
+  letter-spacing: 0.1em;
+  opacity: 0.85;
+}
+.hero-tagline {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(0.9rem, 1.8vw, 1.15rem);
+  color: var(--text);
+  margin-bottom: 2.5rem;
+  line-height: 1.7;
+  max-width: 600px;
+  margin-left: auto; margin-right: auto;
+  opacity: 0.8;
+  font-style: italic;
+}
+.hero-buttons {
+  display: flex; gap: 1.2rem; justify-content: center; flex-wrap: wrap;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--gold-dark), var(--gold), var(--gold-light));
+  color: var(--black);
+  border: none;
+  padding: 1rem 2.4rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s;
+  box-shadow: 0 4px 24px rgba(201,168,76,0.25);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(201,168,76,0.4);
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  padding: 1rem 2.4rem;
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.3s;
+}
+.btn-secondary:hover {
+  background: rgba(201,168,76,0.1);
+  transform: translateY(-2px);
+}
+/* Scroll indicator */
+.scroll-indicator {
+  position: absolute; bottom: 2rem; left: 50%;
+  transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  color: var(--gold);
+  opacity: 0.5;
+  font-size: 0.65rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  animation: float 2s ease-in-out infinite;
+}
+@keyframes float { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(-8px)} }
+.scroll-indicator::after {
+  content: '▼';
+  font-size: 0.8rem;
+}
+
+/* SECTION BASE */
+section { padding: 6rem 2rem; }
+.section-inner { max-width: 1100px; margin: 0 auto; }
+.section-label {
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.5em;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 0.8rem;
+  opacity: 0.8;
+}
+.section-title {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 700;
+  color: var(--cream);
+  margin-bottom: 1rem;
+  line-height: 1.2;
+}
+.section-title .gold { color: var(--gold); }
+.section-desc {
+  font-size: 1rem;
+  line-height: 1.8;
+  color: var(--text);
+  opacity: 0.8;
+  max-width: 600px;
+}
+
+/* GOLD LINE */
+.gold-line {
+  width: 80px; height: 2px;
+  background: linear-gradient(to right, transparent, var(--gold), transparent);
+  margin: 1.5rem 0;
+}
+
+/* ABOUT / MISSION */
+.mission-section { background: var(--dark); }
+.mission-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5rem;
+  align-items: center;
+}
+.mission-visual {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  height: 360px;
+}
+.eye-of-ra {
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  border: 2px solid rgba(201,168,76,0.2);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+.eye-of-ra::before {
+  content: '';
+  position: absolute; inset: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(201,168,76,0.15);
+}
+.eye-of-ra::after {
+  content: '';
+  position: absolute; inset: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201,168,76,0.15) 0%, transparent 70%);
+}
+.eye-symbol {
+  font-size: 4rem;
+  z-index: 1;
+  filter: drop-shadow(0 0 20px rgba(201,168,76,0.4));
+}
+.mission-stats {
+  display: flex; flex-direction: column; gap: 1.5rem; margin-top: 2.5rem;
+}
+.stat-item { display: flex; align-items: baseline; gap: 1rem; }
+.stat-num {
+  font-family: 'Cinzel', serif;
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--gold);
+  line-height: 1;
+}
+.stat-text { font-size: 0.85rem; color: var(--text-dim); letter-spacing: 0.05em; }
+
+/* SERVICES */
+.services-section { background: var(--black); }
+.services-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;
+  margin-top: 3rem;
+}
+.service-card {
+  background: var(--dark2);
+  border: 1px solid rgba(201,168,76,0.1);
+  padding: 2.5rem 2rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s;
+  cursor: default;
+}
+.service-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(to right, transparent, var(--gold), transparent);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+.service-card::after {
+  content: '';
+  position: absolute; bottom: 0; right: 0;
+  width: 60px; height: 60px;
+  border-left: 1px solid rgba(201,168,76,0.1);
+  border-top: 1px solid rgba(201,168,76,0.1);
+}
+.service-card:hover {
+  border-color: rgba(201,168,76,0.3);
+  transform: translateY(-4px);
+  background: var(--dark3);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+}
+.service-card:hover::before { opacity: 1; }
+.service-icon {
+  font-size: 2.2rem; margin-bottom: 1.2rem;
+  display: block;
+  filter: drop-shadow(0 0 8px rgba(201,168,76,0.3));
+}
+.service-title {
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--gold-light);
+  margin-bottom: 0.8rem;
+  letter-spacing: 0.08em;
+}
+.service-desc {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+.service-tag {
+  display: inline-block;
+  margin-top: 1.2rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  border: 1px solid rgba(201,168,76,0.2);
+  padding: 0.25rem 0.7rem;
+}
+
+/* METHOD */
+.method-section { background: var(--dark); }
+.method-steps {
+  display: flex; gap: 0; margin-top: 3rem;
+  position: relative;
+}
+.method-steps::before {
+  content: '';
+  position: absolute; top: 32px; left: 40px; right: 40px; height: 1px;
+  background: linear-gradient(to right, var(--gold-dark), var(--gold), var(--gold-dark));
+  opacity: 0.3;
+}
+.step {
+  flex: 1; text-align: center; padding: 0 1rem;
+  position: relative;
+}
+.step-num {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 1.2rem;
+  font-family: 'Cinzel', serif;
+  font-size: 1.2rem;
+  font-weight: 900;
+  color: var(--gold);
+  background: var(--dark);
+  box-shadow: 0 0 20px rgba(201,168,76,0.15);
+  position: relative; z-index: 1;
+}
+.step-title {
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  color: var(--cream);
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.05em;
+}
+.step-desc {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+/* CTA BANNER */
+.cta-section {
+  background: 
+    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(201,168,76,0.07) 0%, transparent 70%),
+    var(--dark2);
+  border-top: 1px solid rgba(201,168,76,0.15);
+  border-bottom: 1px solid rgba(201,168,76,0.15);
+  text-align: center;
+  padding: 5rem 2rem;
+}
+.cta-section .section-title { margin: 0 auto 1.5rem; }
+.cta-section .section-desc { margin: 0 auto 2.5rem; }
+
+/* FOOTER */
+footer {
+  background: var(--dark);
+  border-top: 1px solid rgba(201,168,76,0.1);
+  padding: 3rem 2rem 2rem;
+}
+.footer-inner {
+  max-width: 1100px; margin: 0 auto;
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem;
+}
+.footer-brand .nav-logo { font-size: 1.2rem; margin-bottom: 1rem; display: inline-flex; }
+.footer-desc { font-size: 0.82rem; color: var(--text-dim); line-height: 1.7; margin-top: 0.8rem; }
+.footer-col h4 {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  color: var(--gold);
+  text-transform: uppercase;
+  margin-bottom: 1rem;
+}
+.footer-col ul { list-style: none; }
+.footer-col ul li { margin-bottom: 0.5rem; }
+.footer-col ul li a {
+  font-size: 0.82rem; color: var(--text-dim);
+  text-decoration: none; transition: color 0.3s;
+}
+.footer-col ul li a:hover { color: var(--gold-light); }
+.footer-bottom {
+  max-width: 1100px; margin: 2rem auto 0;
+  border-top: 1px solid rgba(201,168,76,0.08);
+  padding-top: 1.5rem;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.footer-bottom p { font-size: 0.75rem; color: var(--text-dim); letter-spacing: 0.05em; }
+.footer-bottom .gold { color: var(--gold); }
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .mission-grid { grid-template-columns: 1fr; }
+  .mission-visual { height: 200px; }
+  .services-grid { grid-template-columns: 1fr 1fr; }
+  .method-steps { flex-direction: column; }
+  .method-steps::before { display: none; }
+  .footer-inner { grid-template-columns: 1fr 1fr; }
+  .nav-links { display: none; }
+}
+@media (max-width: 600px) {
+  .services-grid { grid-template-columns: 1fr; }
+  .footer-inner { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAVIGATION -->
+<nav>
+  <a href="#" class="nav-logo">
+    <span class="ankh">𓂀</span>
+    Python Method
+  </a>
+  <ul class="nav-links">
+    <li><a href="#mission">О нас</a></li>
+    <li><a href="#services">Услуги</a></li>
+    <li><a href="#method">Метод</a></li>
+    <li><a href="#contact">Контакт</a></li>
+  </ul>
+  <a href="https://t.me/PythonsMethod_bot" class="nav-cta" target="_blank">Начать</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-pattern"></div>
+  <div class="sun-disc"></div>
+  <div class="column-left"></div>
+  <div class="column-right"></div>
+
+  <div class="hero-content">
+    <p class="hero-eyebrow">𓃭 Digital Rehabilitation Center 𓃭</p>
+    <h1 class="hero-title">
+      Python<span class="gold"> Method</span><br>
+    </h1>
+    <p class="hero-subtitle">Цифровой Центр Восстановления</p>
+    <div class="hieroglyph-divider">𓆙 𓋹 𓆙</div>
+    <p class="hero-tagline">
+      Персонализированная реабилитация через силу искусственного интеллекта.<br>
+      Ваш путь к восстановлению — точный, как египетские пирамиды.
+    </p>
+    <div class="hero-buttons">
+      <a href="https://t.me/PythonsMethod_bot" class="btn-primary" target="_blank">
+        𓋹 Начать Программу
+      </a>
+      <a href="#services" class="btn-secondary">
+        Узнать Больше
+      </a>
+    </div>
+  </div>
+
+  <div class="scroll-indicator">Scroll</div>
+</section>
+
+<!-- MISSION -->
+<section class="mission-section" id="mission">
+  <div class="section-inner">
+    <div class="mission-grid">
+      <div class="mission-visual">
+        <div class="eye-of-ra">
+          <span class="eye-symbol">𓂀</span>
+        </div>
+      </div>
+      <div>
+        <p class="section-label">𓃭 Наша Миссия</p>
+        <h2 class="section-title">
+          Восстановление через<br><span class="gold">Науку и Технологии</span>
+        </h2>
+        <div class="gold-line"></div>
+        <p class="section-desc">
+          Python Method объединяет клиническую экспертизу с возможностями
+          искусственного интеллекта для создания персонализированных программ
+          реабилитации. Мы анализируем ваш прогресс в режиме реального времени
+          и адаптируем программу под ваши индивидуальные нужды.
+        </p>
+        <div class="mission-stats">
+          <div class="stat-item">
+            <span class="stat-num">AI</span>
+            <span class="stat-text">персонализированный анализ 24/7</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">360°</span>
+            <span class="stat-text">холистический подход к восстановлению</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-num">∞</span>
+            <span class="stat-text">непрерывное сопровождение и поддержка</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES -->
+<section class="services-section" id="services">
+  <div class="section-inner">
+    <p class="section-label">𓆙 Наши Программы</p>
+    <h2 class="section-title">Пути к <span class="gold">Исцелению</span></h2>
+    <div class="gold-line"></div>
+    <p class="section-desc">
+      Каждая программа разработана индивидуально и сопровождается
+      интеллектуальным AI-ассистентом, доступным в любое время.
+    </p>
+    <div class="services-grid">
+      <div class="service-card">
+        <span class="service-icon">𓋹</span>
+        <h3 class="service-title">Физическая Реабилитация</h3>
+        <p class="service-desc">
+          Индивидуальные программы восстановления после травм и операций.
+          AI отслеживает прогресс и корректирует нагрузку в реальном времени.
+        </p>
+        <span class="service-tag">Персонализация</span>
+      </div>
+      <div class="service-card">
+        <span class="service-icon">𓂀</span>
+        <h3 class="service-title">Психологическая Поддержка</h3>
+        <p class="service-desc">
+          Когнитивно-поведенческие техники и эмоциональная поддержка.
+          Наш AI-ассистент всегда готов к диалогу — днём и ночью.
+        </p>
+        <span class="service-tag">24/7 Доступ</span>
+      </div>
+      <div class="service-card">
+        <span class="service-icon">𓃭</span>
+        <h3 class="service-title">Нейрокогнитивная Тренировка</h3>
+        <p class="service-desc">
+          Научно обоснованные упражнения для восстановления когнитивных функций,
+          памяти и концентрации внимания.
+        </p>
+        <span class="service-tag">Нейронаука</span>
+      </div>
+      <div class="service-card">
+        <span class="service-icon">𓆙</span>
+        <h3 class="service-title">Нутрициология & Образ Жизни</h3>
+        <p class="service-desc">
+          Персонализированные рекомендации по питанию и образу жизни,
+          поддерживающие процесс реабилитации.
+        </p>
+        <span class="service-tag">Холистика</span>
+      </div>
+      <div class="service-card">
+        <span class="service-icon">𓅓</span>
+        <h3 class="service-title">Мониторинг Прогресса</h3>
+        <p class="service-desc">
+          Детальная аналитика вашего восстановления. Визуализация динамики,
+          достижений и областей для улучшения.
+        </p>
+        <span class="service-tag">Аналитика</span>
+      </div>
+      <div class="service-card">
+        <span class="service-icon">𓏤</span>
+        <h3 class="service-title">Экспертная Команда</h3>
+        <p class="service-desc">
+          Связь с командой сертифицированных специалистов через AI-платформу.
+          Эскалация к живому эксперту при необходимости.
+        </p>
+        <span class="service-tag">Экспертиза</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- METHOD -->
+<section class="method-section" id="method">
+  <div class="section-inner">
+    <p class="section-label">𓋹 Наш Путь</p>
+    <h2 class="section-title">Метод <span class="gold">Python</span></h2>
+    <div class="gold-line"></div>
+    <p class="section-desc">Четыре шага к вашему восстановлению, проверенных наукой.</p>
+    <div class="method-steps">
+      <div class="step">
+        <div class="step-num">I</div>
+        <h3 class="step-title">Диагностика</h3>
+        <p class="step-desc">Комплексная оценка вашего состояния. AI анализирует данные и выстраивает персональный профиль.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">II</div>
+        <h3 class="step-title">Стратегия</h3>
+        <p class="step-desc">Разработка индивидуального плана восстановления с учётом всех аспектов вашего здоровья.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">III</div>
+        <h3 class="step-title">Действие</h3>
+        <p class="step-desc">Выполнение программы с постоянным AI-сопровождением и адаптацией в реальном времени.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">IV</div>
+        <h3 class="step-title">Трансформация</h3>
+        <p class="step-desc">Достижение устойчивых результатов и поддержание достигнутого уровня здоровья.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section" id="contact">
+  <div class="section-inner">
+    <p class="section-label">𓂀 Начните Сегодня</p>
+    <h2 class="section-title" style="text-align:center;">
+      Ваш путь к восстановлению<br>
+      <span class="gold">начинается здесь</span>
+    </h2>
+    <div class="gold-line" style="margin:1.5rem auto;"></div>
+    <p class="section-desc" style="text-align:center;">
+      Запустите персональную программу реабилитации прямо сейчас.<br>
+      Первая консультация с AI-ассистентом — бесплатно.
+    </p>
+    <div class="hero-buttons" style="margin-top:2.5rem;">
+      <a href="https://t.me/PythonsMethod_bot" class="btn-primary" target="_blank">
+        𓋹 Открыть в Telegram
+      </a>
+      <a href="mailto:info@pythonmethod.com" class="btn-secondary">
+        Написать Нам
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="#" class="nav-logo">
+        <span class="ankh">𓂀</span>
+        Python Method
+      </a>
+      <p class="footer-desc">
+        Digital Rehabilitation Center — инновационная платформа цифровой реабилитации,
+        объединяющая клиническую экспертизу и искусственный интеллект.
+      </p>
+    </div>
+    <div class="footer-col">
+      <h4>Программы</h4>
+      <ul>
+        <li><a href="#services">Физическая</a></li>
+        <li><a href="#services">Психологическая</a></li>
+        <li><a href="#services">Нейрокогнитивная</a></li>
+        <li><a href="#services">Нутрициология</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Ресурсы</h4>
+      <ul>
+        <li><a href="#">О методе</a></li>
+        <li><a href="#">Исследования</a></li>
+        <li><a href="#">Блог</a></li>
+        <li><a href="#">FAQ</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Контакты</h4>
+      <ul>
+        <li><a href="https://t.me/PythonsMethod_bot" target="_blank">Telegram Bot</a></li>
+        <li><a href="#">Email</a></li>
+        <li><a href="#">Instagram</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <p>© 2026 <span class="gold">Python Method</span>. All rights reserved.</p>
+    <p>𓂀 Digital Rehabilitation Center</p>
+  </div>
+</footer>
+
+<script>
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) target.scrollIntoView({ behavior: 'smooth' });
+  });
+});
+
+// Nav active state on scroll
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-links a');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  });
+  navLinks.forEach(a => {
+    a.style.color = a.getAttribute('href') === '#' + current 
+      ? 'var(--gold-light)' : '';
+  });
+});
+
+// Entrance animations
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.style.opacity = '1';
+      entry.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.service-card, .step').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(20px)';
+  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>
