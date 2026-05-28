@@ -49,11 +49,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;display:flex;ali
 .btn-o:hover{background:rgba(201,162,75,.1);transform:translateY(-2px)}
 .karen{position:relative;display:flex;flex-direction:column;align-items:center}
 .karen-frame{position:relative;width:300px;max-width:78vw;aspect-ratio:3/3.7;border:1px solid var(--line);border-radius:4px;background:linear-gradient(165deg,var(--ink3),var(--ink2));overflow:hidden;display:flex;align-items:flex-end;justify-content:center;box-shadow:0 24px 60px rgba(0,0,0,.5)}
-.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 28%,rgba(201,162,75,.14),transparent 65%)}
-.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none}
-.karen-av{position:relative;z-index:1;width:78%;aspect-ratio:1/1.18;margin-bottom:0;background:linear-gradient(180deg,var(--ink4),var(--ink3));border-radius:50% 50% 8px 8px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;border:1px solid var(--line)}
-.karen-silhouette{font-size:130px;line-height:1;color:rgba(201,162,75,.32);margin-bottom:-8px;filter:drop-shadow(0 0 18px rgba(201,162,75,.25))}
-.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.6;z-index:2}
+.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 28%,rgba(201,162,75,.14),transparent 65%);z-index:2;pointer-events:none}
+.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none;z-index:3}
+.karen-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 18%;z-index:1}
+.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.7;z-index:4;text-shadow:0 1px 6px rgba(0,0,0,.6)}
 .karen-cap{margin-top:18px;text-align:center}
 .karen-name{font-family:'Cinzel',serif;font-size:18px;font-weight:700;letter-spacing:.1em;color:var(--cream)}
 .karen-role{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:5px}
@@ -157,7 +156,7 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 <div class="karen">
 <div class="karen-frame">
 <span class="karen-glyph">𓂀</span>
-<div class="karen-av"><span class="karen-silhouette">𓀀</span></div>
+<img class="karen-photo" src="/static/karen.jpg" alt="Karen Pashikyan" loading="lazy">
 </div>
 <div class="karen-cap">
 <div class="karen-name">KAREN PASHIKYAN</div>
@@ -227,7 +226,7 @@ footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28
 <div class="karen">
 <div class="karen-frame">
 <span class="karen-glyph">𓂀</span>
-<div class="karen-av"><span class="karen-silhouette">𓀀</span></div>
+<img class="karen-photo" src="/static/karen.jpg" alt="Karen Pashikyan" loading="lazy">
 </div>
 </div>
 <div class="founder-body">
