@@ -1,816 +1,258 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" id="htmlRoot">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Python Method — Digital Rehabilitation Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Raleway:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Manrope:wght@300;400;500;600;700&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
-:root {
-  --gold: #C9A84C;
-  --gold-light: #E8C97A;
-  --gold-dark: #8B6914;
-  --gold-glow: rgba(201,168,76,0.3);
-  --black: #0A0A0A;
-  --dark: #111111;
-  --dark2: #1A1A1A;
-  --dark3: #222222;
-  --cream: #F5F0E8;
-  --text: #D4C5A0;
-  --text-dim: #8A7D60;
-  --accent: #C84B2F;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { background: var(--black); color: var(--text); font-family: 'Raleway', sans-serif; overflow-x: hidden; }
-
-/* SCROLLBAR */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--dark); }
-::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
-
-/* HIEROGLYPHIC DIVIDER */
-.hieroglyph-divider {
-  text-align: center;
-  color: var(--gold);
-  font-size: 1.4rem;
-  letter-spacing: 0.8rem;
-  opacity: 0.6;
-  margin: 0.5rem 0;
-  user-select: none;
-}
+:root{--gold:#C9A24B;--gold-lt:#E4C779;--gold-dk:#8A6A1F;--ink:#070707;--ink2:#0E0E0F;--ink3:#16161A;--ink4:#1E1E22;--cream:#F3ECDD;--txt:#C8BCA0;--dim:#7E745C;--line:rgba(201,162,75,.16)}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--txt);font-family:'Manrope',sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--ink)}::-webkit-scrollbar-thumb{background:var(--gold-dk);border-radius:3px}
+.cz{font-family:'Cinzel',serif}
+.gold{color:var(--gold)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+[data-en]{display:none}
+body.en [data-ru]{display:none}
+body.en [data-en]{display:inline}
+body.en [data-en].blk{display:block}
 
 /* NAV */
-nav {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-  background: rgba(10,10,10,0.92);
-  border-bottom: 1px solid rgba(201,168,76,0.2);
-  backdrop-filter: blur(12px);
-  padding: 0 2rem;
-  display: flex; align-items: center; justify-content: space-between;
-  height: 64px;
-}
-.nav-logo {
-  font-family: 'Cinzel', serif;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--gold);
-  text-decoration: none;
-  letter-spacing: 0.15em;
-  display: flex; align-items: center; gap: 0.6rem;
-}
-.nav-logo span.ankh { font-size: 1.4rem; }
-.nav-links { display: flex; gap: 2rem; list-style: none; }
-.nav-links a {
-  color: var(--text-dim);
-  text-decoration: none;
-  font-size: 0.8rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  transition: color 0.3s;
-}
-.nav-links a:hover { color: var(--gold-light); }
-.nav-cta {
-  background: transparent;
-  border: 1px solid var(--gold);
-  color: var(--gold);
-  padding: 0.5rem 1.4rem;
-  font-family: 'Cinzel', serif;
-  font-size: 0.75rem;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  cursor: pointer;
-  text-decoration: none;
-  transition: all 0.3s;
-}
-.nav-cta:hover { background: var(--gold); color: var(--black); }
+nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(7,7,7,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line);transition:background .3s}
+.logo{font-family:'Cinzel',serif;font-weight:700;font-size:17px;letter-spacing:.14em;color:var(--gold);text-decoration:none;display:flex;align-items:center;gap:9px}
+.logo .ankh{font-size:20px}
+.nav-r{display:flex;align-items:center;gap:26px}
+.nav-links{display:flex;gap:26px;list-style:none}
+.nav-links a{color:var(--dim);text-decoration:none;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:color .25s}
+.nav-links a:hover{color:var(--gold-lt)}
+.lang{display:flex;gap:2px;border:1px solid var(--line);border-radius:30px;padding:3px;cursor:pointer}
+.lang span{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 10px;border-radius:30px;color:var(--dim);transition:all .25s}
+.lang span.on{background:var(--gold);color:var(--ink)}
+.burger{display:none;flex-direction:column;gap:5px;cursor:pointer;background:none;border:none;padding:6px}
+.burger span{width:24px;height:2px;background:var(--gold);transition:.3s}
 
 /* HERO */
-.hero {
-  min-height: 100vh;
-  position: relative;
-  display: flex; align-items: center; justify-content: center;
-  overflow: hidden;
-}
-.hero-bg {
-  position: absolute; inset: 0;
-  background: 
-    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(201,168,76,0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 80% 80%, rgba(139,105,20,0.04) 0%, transparent 50%),
-    var(--black);
-}
-/* Egyptian geometric pattern overlay */
-.hero-pattern {
-  position: absolute; inset: 0;
-  opacity: 0.03;
-  background-image: 
-    repeating-linear-gradient(45deg, var(--gold) 0, var(--gold) 1px, transparent 0, transparent 50%),
-    repeating-linear-gradient(-45deg, var(--gold) 0, var(--gold) 1px, transparent 0, transparent 50%);
-  background-size: 40px 40px;
-}
-/* Sun disc decoration */
-.sun-disc {
-  position: absolute;
-  top: 8%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 200px; height: 200px;
-  border-radius: 50%;
-  border: 1px solid rgba(201,168,76,0.08);
-  box-shadow:
-    0 0 40px rgba(201,168,76,0.04),
-    inset 0 0 40px rgba(201,168,76,0.02);
-}
-.sun-disc::before {
-  content: '';
-  position: absolute; inset: 15px;
-  border-radius: 50%;
-  border: 1px solid rgba(201,168,76,0.06);
-}
-.sun-disc::after {
-  content: '☀';
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 2rem;
-  color: rgba(201,168,76,0.15);
-}
-/* Side columns */
-.column-left, .column-right {
-  position: absolute;
-  top: 0; bottom: 0;
-  width: 3px;
-  background: linear-gradient(to bottom, transparent, var(--gold-dark) 20%, var(--gold) 50%, var(--gold-dark) 80%, transparent);
-  opacity: 0.12;
-}
-.column-left { left: 5%; }
-.column-right { right: 5%; }
+.hero{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;padding-top:64px}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 70% 55% at 70% 35%,rgba(201,162,75,.08),transparent 60%),var(--ink)}
+.hero-grid-bg{position:absolute;inset:0;opacity:.025;background-image:repeating-linear-gradient(0deg,var(--gold) 0 1px,transparent 1px 44px),repeating-linear-gradient(90deg,var(--gold) 0 1px,transparent 1px 44px)}
+.hero-inner{position:relative;z-index:2;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center;width:100%}
+.h-eyebrow{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.42em;color:var(--gold);text-transform:uppercase;margin-bottom:20px}
+.h-title{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(38px,5.6vw,72px);line-height:1.04;color:var(--cream);margin-bottom:18px}
+.h-sub{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(16px,2vw,21px);color:var(--gold-lt);margin-bottom:22px;font-weight:400}
+.h-desc{font-size:15.5px;line-height:1.75;color:var(--txt);max-width:440px;margin-bottom:34px;opacity:.85}
+.h-btns{display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:15px 30px;font-family:'Cinzel',serif;font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;text-decoration:none;cursor:pointer;border:none;transition:all .3s}
+.btn-g{background:linear-gradient(135deg,var(--gold-dk),var(--gold),var(--gold-lt));color:var(--ink);box-shadow:0 6px 26px rgba(201,162,75,.26)}
+.btn-g:hover{transform:translateY(-2px);box-shadow:0 10px 34px rgba(201,162,75,.4)}
+.btn-o{background:transparent;color:var(--gold);border:1px solid var(--gold)}
+.btn-o:hover{background:rgba(201,162,75,.1);transform:translateY(-2px)}
 
-.hero-content {
-  position: relative; z-index: 2;
-  text-align: center;
-  padding: 2rem;
-  max-width: 900px;
-}
-.hero-eyebrow {
-  font-family: 'Cinzel', serif;
-  font-size: 0.7rem;
-  letter-spacing: 0.5em;
-  color: var(--gold);
-  text-transform: uppercase;
-  margin-bottom: 1.5rem;
-  opacity: 0.9;
-}
-.hero-title {
-  font-family: 'Cinzel', serif;
-  font-size: clamp(2.5rem, 6vw, 5rem);
-  font-weight: 900;
-  line-height: 1.1;
-  color: var(--cream);
-  margin-bottom: 0.5rem;
-  text-shadow: 0 0 60px rgba(201,168,76,0.2);
-}
-.hero-title .gold { color: var(--gold); }
-.hero-subtitle {
-  font-family: 'Cinzel', serif;
-  font-size: clamp(1rem, 2.5vw, 1.6rem);
-  font-weight: 400;
-  color: var(--gold-light);
-  margin-bottom: 1.5rem;
-  letter-spacing: 0.1em;
-  opacity: 0.85;
-}
-.hero-tagline {
-  font-family: 'Playfair Display', serif;
-  font-size: clamp(0.9rem, 1.8vw, 1.15rem);
-  color: var(--text);
-  margin-bottom: 2.5rem;
-  line-height: 1.7;
-  max-width: 600px;
-  margin-left: auto; margin-right: auto;
-  opacity: 0.8;
-  font-style: italic;
-}
-.hero-buttons {
-  display: flex; gap: 1.2rem; justify-content: center; flex-wrap: wrap;
-}
-.btn-primary {
-  background: linear-gradient(135deg, var(--gold-dark), var(--gold), var(--gold-light));
-  color: var(--black);
-  border: none;
-  padding: 1rem 2.4rem;
-  font-family: 'Cinzel', serif;
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  cursor: pointer;
-  text-decoration: none;
-  display: inline-block;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s;
-  box-shadow: 0 4px 24px rgba(201,168,76,0.25);
-}
-.btn-primary:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(201,168,76,0.4);
-}
-.btn-secondary {
-  background: transparent;
-  color: var(--gold);
-  border: 1px solid var(--gold);
-  padding: 1rem 2.4rem;
-  font-family: 'Cinzel', serif;
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  cursor: pointer;
-  text-decoration: none;
-  display: inline-block;
-  transition: all 0.3s;
-}
-.btn-secondary:hover {
-  background: rgba(201,168,76,0.1);
-  transform: translateY(-2px);
-}
-/* Scroll indicator */
-.scroll-indicator {
-  position: absolute; bottom: 2rem; left: 50%;
-  transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
-  color: var(--gold);
-  opacity: 0.5;
-  font-size: 0.65rem;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  animation: float 2s ease-in-out infinite;
-}
-@keyframes float { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(-8px)} }
-.scroll-indicator::after {
-  content: '▼';
-  font-size: 0.8rem;
-}
+/* KAREN CARD */
+.karen{position:relative;display:flex;flex-direction:column;align-items:center}
+.karen-frame{position:relative;width:300px;max-width:78vw;aspect-ratio:3/3.7;border:1px solid var(--line);border-radius:4px;background:linear-gradient(165deg,var(--ink3),var(--ink2));overflow:hidden;display:flex;align-items:flex-end;justify-content:center;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 28%,rgba(201,162,75,.14),transparent 65%)}
+.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none}
+.karen-av{position:relative;z-index:1;width:78%;aspect-ratio:1/1.18;margin-bottom:0;background:linear-gradient(180deg,var(--ink4),var(--ink3));border-radius:50% 50% 8px 8px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;border:1px solid var(--line)}
+.karen-silhouette{font-size:130px;line-height:1;color:rgba(201,162,75,.32);margin-bottom:-8px;filter:drop-shadow(0 0 18px rgba(201,162,75,.25))}
+.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.6;z-index:2}
+.karen-cap{margin-top:18px;text-align:center}
+.karen-name{font-family:'Cinzel',serif;font-size:18px;font-weight:700;letter-spacing:.1em;color:var(--cream)}
+.karen-role{font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin-top:5px}
+.karen-badge{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:11px;letter-spacing:.05em;color:var(--dim);border:1px solid var(--line);border-radius:30px;padding:5px 13px}
+.dot{width:6px;height:6px;border-radius:50%;background:#4ad07a;box-shadow:0 0 8px #4ad07a}
 
-/* SECTION BASE */
-section { padding: 6rem 2rem; }
-.section-inner { max-width: 1100px; margin: 0 auto; }
-.section-label {
-  font-family: 'Cinzel', serif;
-  font-size: 0.65rem;
-  letter-spacing: 0.5em;
-  color: var(--gold);
-  text-transform: uppercase;
-  margin-bottom: 0.8rem;
-  opacity: 0.8;
-}
-.section-title {
-  font-family: 'Cinzel', serif;
-  font-size: clamp(1.8rem, 4vw, 2.8rem);
-  font-weight: 700;
-  color: var(--cream);
-  margin-bottom: 1rem;
-  line-height: 1.2;
-}
-.section-title .gold { color: var(--gold); }
-.section-desc {
-  font-size: 1rem;
-  line-height: 1.8;
-  color: var(--text);
-  opacity: 0.8;
-  max-width: 600px;
-}
+/* SECTIONS */
+section.sec{padding:96px 0;position:relative}
+.sec-ink2{background:var(--ink2)}
+.lbl{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.4em;color:var(--gold);text-transform:uppercase;margin-bottom:14px}
+.s-title{font-family:'Cinzel',serif;font-weight:700;font-size:clamp(26px,3.6vw,40px);line-height:1.18;color:var(--cream);margin-bottom:16px}
+.gline{width:66px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);margin:18px 0 22px}
+.s-desc{font-size:15.5px;line-height:1.8;color:var(--txt);opacity:.82;max-width:560px}
 
-/* GOLD LINE */
-.gold-line {
-  width: 80px; height: 2px;
-  background: linear-gradient(to right, transparent, var(--gold), transparent);
-  margin: 1.5rem 0;
-}
+/* PILLARS */
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:42px}
+.pill{background:var(--ink3);border:1px solid var(--line);border-radius:6px;padding:30px 26px;transition:all .35s;position:relative;overflow:hidden}
+.pill::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .35s}
+.pill:hover{transform:translateY(-5px);border-color:rgba(201,162,75,.32);background:var(--ink4)}
+.pill:hover::before{opacity:1}
+.pill-ic{font-size:30px;margin-bottom:16px;display:block;filter:drop-shadow(0 0 10px rgba(201,162,75,.3))}
+.pill-t{font-family:'Cinzel',serif;font-size:16px;font-weight:600;color:var(--gold-lt);margin-bottom:10px;letter-spacing:.04em}
+.pill-d{font-size:13.5px;line-height:1.7;color:var(--dim)}
 
-/* ABOUT / MISSION */
-.mission-section { background: var(--dark); }
-.mission-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 5rem;
-  align-items: center;
-}
-.mission-visual {
-  position: relative;
-  display: flex; align-items: center; justify-content: center;
-  height: 360px;
-}
-.eye-of-ra {
-  width: 220px; height: 220px;
-  border-radius: 50%;
-  border: 2px solid rgba(201,168,76,0.2);
-  display: flex; align-items: center; justify-content: center;
-  position: relative;
-}
-.eye-of-ra::before {
-  content: '';
-  position: absolute; inset: 20px;
-  border-radius: 50%;
-  border: 1px solid rgba(201,168,76,0.15);
-}
-.eye-of-ra::after {
-  content: '';
-  position: absolute; inset: 40px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(201,168,76,0.15) 0%, transparent 70%);
-}
-.eye-symbol {
-  font-size: 4rem;
-  z-index: 1;
-  filter: drop-shadow(0 0 20px rgba(201,168,76,0.4));
-}
-.mission-stats {
-  display: flex; flex-direction: column; gap: 1.5rem; margin-top: 2.5rem;
-}
-.stat-item { display: flex; align-items: baseline; gap: 1rem; }
-.stat-num {
-  font-family: 'Cinzel', serif;
-  font-size: 2.5rem;
-  font-weight: 900;
-  color: var(--gold);
-  line-height: 1;
-}
-.stat-text { font-size: 0.85rem; color: var(--text-dim); letter-spacing: 0.05em; }
+/* STEPS */
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:48px;position:relative}
+.step{text-align:center;padding:0 8px}
+.step-n{width:58px;height:58px;border-radius:50%;border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-family:'Cinzel',serif;font-size:18px;font-weight:900;color:var(--gold);background:var(--ink2);box-shadow:0 0 22px rgba(201,162,75,.14)}
+.step-t{font-family:'Cinzel',serif;font-size:14.5px;color:var(--cream);margin-bottom:8px;letter-spacing:.03em}
+.step-d{font-size:12.5px;line-height:1.6;color:var(--dim)}
 
-/* SERVICES */
-.services-section { background: var(--black); }
-.services-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;
-  margin-top: 3rem;
-}
-.service-card {
-  background: var(--dark2);
-  border: 1px solid rgba(201,168,76,0.1);
-  padding: 2.5rem 2rem;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.4s;
-  cursor: default;
-}
-.service-card::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(to right, transparent, var(--gold), transparent);
-  opacity: 0;
-  transition: opacity 0.4s;
-}
-.service-card::after {
-  content: '';
-  position: absolute; bottom: 0; right: 0;
-  width: 60px; height: 60px;
-  border-left: 1px solid rgba(201,168,76,0.1);
-  border-top: 1px solid rgba(201,168,76,0.1);
-}
-.service-card:hover {
-  border-color: rgba(201,168,76,0.3);
-  transform: translateY(-4px);
-  background: var(--dark3);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
-}
-.service-card:hover::before { opacity: 1; }
-.service-icon {
-  font-size: 2.2rem; margin-bottom: 1.2rem;
-  display: block;
-  filter: drop-shadow(0 0 8px rgba(201,168,76,0.3));
-}
-.service-title {
-  font-family: 'Cinzel', serif;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--gold-light);
-  margin-bottom: 0.8rem;
-  letter-spacing: 0.08em;
-}
-.service-desc {
-  font-size: 0.85rem;
-  line-height: 1.7;
-  color: var(--text-dim);
-}
-.service-tag {
-  display: inline-block;
-  margin-top: 1.2rem;
-  font-size: 0.65rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--gold);
-  border: 1px solid rgba(201,168,76,0.2);
-  padding: 0.25rem 0.7rem;
-}
-
-/* METHOD */
-.method-section { background: var(--dark); }
-.method-steps {
-  display: flex; gap: 0; margin-top: 3rem;
-  position: relative;
-}
-.method-steps::before {
-  content: '';
-  position: absolute; top: 32px; left: 40px; right: 40px; height: 1px;
-  background: linear-gradient(to right, var(--gold-dark), var(--gold), var(--gold-dark));
-  opacity: 0.3;
-}
-.step {
-  flex: 1; text-align: center; padding: 0 1rem;
-  position: relative;
-}
-.step-num {
-  width: 64px; height: 64px;
-  border-radius: 50%;
-  border: 2px solid var(--gold);
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 1.2rem;
-  font-family: 'Cinzel', serif;
-  font-size: 1.2rem;
-  font-weight: 900;
-  color: var(--gold);
-  background: var(--dark);
-  box-shadow: 0 0 20px rgba(201,168,76,0.15);
-  position: relative; z-index: 1;
-}
-.step-title {
-  font-family: 'Cinzel', serif;
-  font-size: 0.85rem;
-  color: var(--cream);
-  margin-bottom: 0.6rem;
-  letter-spacing: 0.05em;
-}
-.step-desc {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  line-height: 1.6;
-}
-
-/* CTA BANNER */
-.cta-section {
-  background: 
-    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(201,168,76,0.07) 0%, transparent 70%),
-    var(--dark2);
-  border-top: 1px solid rgba(201,168,76,0.15);
-  border-bottom: 1px solid rgba(201,168,76,0.15);
-  text-align: center;
-  padding: 5rem 2rem;
-}
-.cta-section .section-title { margin: 0 auto 1.5rem; }
-.cta-section .section-desc { margin: 0 auto 2.5rem; }
+/* CTA */
+.cta{text-align:center;background:radial-gradient(ellipse 90% 80% at 50% 50%,rgba(201,162,75,.08),transparent 70%),var(--ink3);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:88px 0}
+.cta .s-title{margin:0 auto 14px}.cta .gline{margin:18px auto 22px}.cta .s-desc{margin:0 auto 32px}.cta .h-btns{justify-content:center}
 
 /* FOOTER */
-footer {
-  background: var(--dark);
-  border-top: 1px solid rgba(201,168,76,0.1);
-  padding: 3rem 2rem 2rem;
-}
-.footer-inner {
-  max-width: 1100px; margin: 0 auto;
-  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 3rem;
-}
-.footer-brand .nav-logo { font-size: 1.2rem; margin-bottom: 1rem; display: inline-flex; }
-.footer-desc { font-size: 0.82rem; color: var(--text-dim); line-height: 1.7; margin-top: 0.8rem; }
-.footer-col h4 {
-  font-family: 'Cinzel', serif;
-  font-size: 0.7rem;
-  letter-spacing: 0.3em;
-  color: var(--gold);
-  text-transform: uppercase;
-  margin-bottom: 1rem;
-}
-.footer-col ul { list-style: none; }
-.footer-col ul li { margin-bottom: 0.5rem; }
-.footer-col ul li a {
-  font-size: 0.82rem; color: var(--text-dim);
-  text-decoration: none; transition: color 0.3s;
-}
-.footer-col ul li a:hover { color: var(--gold-light); }
-.footer-bottom {
-  max-width: 1100px; margin: 2rem auto 0;
-  border-top: 1px solid rgba(201,168,76,0.08);
-  padding-top: 1.5rem;
-  display: flex; justify-content: space-between; align-items: center;
-}
-.footer-bottom p { font-size: 0.75rem; color: var(--text-dim); letter-spacing: 0.05em; }
-.footer-bottom .gold { color: var(--gold); }
+footer{background:var(--ink2);border-top:1px solid var(--line);padding:52px 0 28px}
+.f-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px}
+.f-desc{font-size:13px;line-height:1.7;color:var(--dim);margin-top:14px;max-width:320px}
+.f-col h4{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.26em;color:var(--gold);text-transform:uppercase;margin-bottom:14px}
+.f-col ul{list-style:none}.f-col li{margin-bottom:9px}
+.f-col a{font-size:13px;color:var(--dim);text-decoration:none;transition:color .25s}.f-col a:hover{color:var(--gold-lt)}
+.f-bot{border-top:1px solid var(--line);margin-top:38px;padding-top:22px;display:flex;justify-content:space-between;align-items:center}
+.f-bot p{font-size:12px;color:var(--dim);letter-spacing:.04em}
 
-/* RESPONSIVE */
-@media (max-width: 900px) {
-  .mission-grid { grid-template-columns: 1fr; }
-  .mission-visual { height: 200px; }
-  .services-grid { grid-template-columns: 1fr 1fr; }
-  .method-steps { flex-direction: column; }
-  .method-steps::before { display: none; }
-  .footer-inner { grid-template-columns: 1fr 1fr; }
-  .nav-links { display: none; }
+/* MOBILE */
+@media(max-width:880px){
+.nav-links{display:none}
+.burger{display:flex}
+.hero-inner{grid-template-columns:1fr;gap:36px;text-align:center}
+.karen{order:-1}
+.h-desc{margin-left:auto;margin-right:auto}
+.h-btns{justify-content:center}
+.pillars{grid-template-columns:1fr}
+.steps{grid-template-columns:1fr 1fr;gap:28px}
+.f-grid{grid-template-columns:1fr 1fr;gap:28px}
+.mob-menu.open{display:flex}
 }
-@media (max-width: 600px) {
-  .services-grid { grid-template-columns: 1fr; }
-  .footer-inner { grid-template-columns: 1fr; }
+@media(max-width:520px){
+.steps{grid-template-columns:1fr}
+.f-grid{grid-template-columns:1fr}
+.f-bot{flex-direction:column;gap:10px}
 }
+.mob-menu{display:none;position:fixed;top:64px;left:0;right:0;z-index:99;flex-direction:column;background:rgba(7,7,7,.97);border-bottom:1px solid var(--line);padding:18px 24px}
+.mob-menu a{color:var(--txt);text-decoration:none;font-family:'Cinzel',serif;font-size:14px;letter-spacing:.08em;padding:13px 0;border-bottom:1px solid var(--line)}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
 </style>
 </head>
 <body>
-
-<!-- NAVIGATION -->
-<nav>
-  <a href="#" class="nav-logo">
-    <span class="ankh">𓂀</span>
-    Python Method
-  </a>
-  <ul class="nav-links">
-    <li><a href="#mission">О нас</a></li>
-    <li><a href="#services">Услуги</a></li>
-    <li><a href="#method">Метод</a></li>
-    <li><a href="#contact">Контакт</a></li>
-  </ul>
-  <a href="https://t.me/PythonsMethod_bot" class="nav-cta" target="_blank">Начать</a>
+<nav id="nav">
+  <a href="#top" class="logo"><span class="ankh">☥</span> PYTHON METHOD</a>
+  <div class="nav-r">
+    <ul class="nav-links">
+      <li><a href="#about" data-ru>О центре</a><a href="#about" data-en>About</a></li>
+      <li><a href="#pillars" data-ru>Направления</a><a href="#pillars" data-en>Programs</a></li>
+      <li><a href="#method" data-ru>Метод</a><a href="#method" data-en>Method</a></li>
+      <li><a href="#start" data-ru>Контакт</a><a href="#start" data-en>Contact</a></li>
+    </ul>
+    <div class="lang" id="lang"><span class="on" data-l="ru">RU</span><span data-l="en">EN</span></div>
+    <button class="burger" id="burger"><span></span><span></span><span></span></button>
+  </div>
 </nav>
+<div class="mob-menu" id="mobMenu">
+  <a href="#about" data-ru>О центре</a><a href="#about" data-en>About</a>
+  <a href="#pillars" data-ru>Направления</a><a href="#pillars" data-en>Programs</a>
+  <a href="#method" data-ru>Метод</a><a href="#method" data-en>Method</a>
+  <a href="#start" data-ru>Контакт</a><a href="#start" data-en>Contact</a>
+</div>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="hero-bg"></div>
-  <div class="hero-pattern"></div>
-  <div class="sun-disc"></div>
-  <div class="column-left"></div>
-  <div class="column-right"></div>
-
-  <div class="hero-content">
-    <p class="hero-eyebrow">𓃭 Digital Rehabilitation Center 𓃭</p>
-    <h1 class="hero-title">
-      Python<span class="gold"> Method</span><br>
-    </h1>
-    <p class="hero-subtitle">Цифровой Центр Восстановления</p>
-    <div class="hieroglyph-divider">𓆙 𓋹 𓆙</div>
-    <p class="hero-tagline">
-      Персонализированная реабилитация через силу искусственного интеллекта.<br>
-      Ваш путь к восстановлению — точный, как египетские пирамиды.
-    </p>
-    <div class="hero-buttons">
-      <a href="https://t.me/PythonsMethod_bot" class="btn-primary" target="_blank">
-        𓋹 Начать Программу
-      </a>
-      <a href="#services" class="btn-secondary">
-        Узнать Больше
-      </a>
+<section class="hero" id="top">
+  <div class="hero-bg"></div><div class="hero-grid-bg"></div>
+  <div class="wrap"><div class="hero-inner">
+    <div class="hero-copy">
+      <p class="h-eyebrow">☥ Digital Rehabilitation Center ☥</p>
+      <h1 class="h-title"><span data-ru>Цифровой центр<br><span class="gold">восстановления</span></span><span data-en>Digital Center of<br><span class="gold">Rehabilitation</span></span></h1>
+      <p class="h-sub"><span data-ru>Технология. Точность. Восстановление.</span><span data-en>Technology. Precision. Recovery.</span></p>
+      <p class="h-desc"><span data-ru>Персональная цифровая реабилитация под сопровождением AI-ассистента Карена — рядом на каждом шаге вашего пути к восстановлению.</span><span data-en>Personalised digital rehabilitation guided by the AI assistant Karen — beside you at every step of your recovery journey.</span></p>
+      <div class="h-btns">
+        <a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Начать путь</span><span data-en>Begin journey</span></a>
+        <a href="#about" class="btn btn-o"><span data-ru>Узнать больше</span><span data-en>Learn more</span></a>
+      </div>
     </div>
-  </div>
-
-  <div class="scroll-indicator">Scroll</div>
+    <div class="karen">
+      <div class="karen-frame">
+        <div class="karen-glyph">𓂀</div>
+        <div class="karen-av"><div class="karen-silhouette">𓀀</div></div>
+      </div>
+      <div class="karen-cap">
+        <div class="karen-name cz">КАРЕН</div>
+        <div class="karen-role"><span data-ru>AI-ассистент центра</span><span data-en>AI Center Assistant</span></div>
+        <div class="karen-badge"><span class="dot"></span><span data-ru>на связи 24/7</span><span data-en>online 24/7</span></div>
+      </div>
+    </div>
+  </div></div>
 </section>
 
-<!-- MISSION -->
-<section class="mission-section" id="mission">
-  <div class="section-inner">
-    <div class="mission-grid">
-      <div class="mission-visual">
-        <div class="eye-of-ra">
-          <span class="eye-symbol">𓂀</span>
-        </div>
-      </div>
-      <div>
-        <p class="section-label">𓃭 Наша Миссия</p>
-        <h2 class="section-title">
-          Восстановление через<br><span class="gold">Науку и Технологии</span>
-        </h2>
-        <div class="gold-line"></div>
-        <p class="section-desc">
-          Python Method объединяет клиническую экспертизу с возможностями
-          искусственного интеллекта для создания персонализированных программ
-          реабилитации. Мы анализируем ваш прогресс в режиме реального времени
-          и адаптируем программу под ваши индивидуальные нужды.
-        </p>
-        <div class="mission-stats">
-          <div class="stat-item">
-            <span class="stat-num">AI</span>
-            <span class="stat-text">персонализированный анализ 24/7</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-num">360°</span>
-            <span class="stat-text">холистический подход к восстановлению</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-num">∞</span>
-            <span class="stat-text">непрерывное сопровождение и поддержка</span>
-          </div>
-        </div>
-      </div>
+<section class="sec sec-ink2" id="about">
+  <div class="wrap rv">
+    <p class="lbl"><span data-ru>О центре</span><span data-en>About</span></p>
+    <h2 class="s-title"><span data-ru>Реабилитация, выстроенная<br>как <span class="gold">точная система</span></span><span data-en>Rehabilitation built<br>as a <span class="gold">precise system</span></span></h2>
+    <div class="gline"></div>
+    <p class="s-desc"><span data-ru>Python Method — это цифровой центр восстановления, где клиническая логика встречается с интеллектуальным сопровождением. Мы не заменяем специалистов — мы держим ваш путь в фокусе каждый день, отслеживая прогресс и адаптируя программу под вас.</span><span data-en>Python Method is a digital recovery center where clinical logic meets intelligent guidance. We do not replace specialists — we keep your journey in focus every day, tracking progress and adapting the programme to you.</span></p>
+  </div>
+</section>
+
+<section class="sec" id="pillars">
+  <div class="wrap rv">
+    <p class="lbl"><span data-ru>Направления</span><span data-en>Programs</span></p>
+    <h2 class="s-title"><span data-ru>Пути к <span class="gold">восстановлению</span></span><span data-en>Paths to <span class="gold">recovery</span></span></h2>
+    <div class="gline"></div>
+    <div class="pillars">
+      <div class="pill"><span class="pill-ic">☥</span><h3 class="pill-t"><span data-ru>Физическое</span><span data-en>Physical</span></h3><p class="pill-d"><span data-ru>Программы восстановления после травм с адаптацией нагрузки в реальном времени.</span><span data-en>Recovery programmes after injury with real-time load adaptation.</span></p></div>
+      <div class="pill"><span class="pill-ic">𓂀</span><h3 class="pill-t"><span data-ru>Ментальное</span><span data-en>Mental</span></h3><p class="pill-d"><span data-ru>Эмоциональная поддержка и когнитивные техники — Карен рядом днём и ночью.</span><span data-en>Emotional support and cognitive techniques — Karen is here day and night.</span></p></div>
+      <div class="pill"><span class="pill-ic">𓋹</span><h3 class="pill-t"><span data-ru>Когнитивное</span><span data-en>Cognitive</span></h3><p class="pill-d"><span data-ru>Тренировка памяти, внимания и концентрации на научной основе.</span><span data-en>Memory, attention and focus training on a scientific basis.</span></p></div>
     </div>
   </div>
 </section>
 
-<!-- SERVICES -->
-<section class="services-section" id="services">
-  <div class="section-inner">
-    <p class="section-label">𓆙 Наши Программы</p>
-    <h2 class="section-title">Пути к <span class="gold">Исцелению</span></h2>
-    <div class="gold-line"></div>
-    <p class="section-desc">
-      Каждая программа разработана индивидуально и сопровождается
-      интеллектуальным AI-ассистентом, доступным в любое время.
-    </p>
-    <div class="services-grid">
-      <div class="service-card">
-        <span class="service-icon">𓋹</span>
-        <h3 class="service-title">Физическая Реабилитация</h3>
-        <p class="service-desc">
-          Индивидуальные программы восстановления после травм и операций.
-          AI отслеживает прогресс и корректирует нагрузку в реальном времени.
-        </p>
-        <span class="service-tag">Персонализация</span>
-      </div>
-      <div class="service-card">
-        <span class="service-icon">𓂀</span>
-        <h3 class="service-title">Психологическая Поддержка</h3>
-        <p class="service-desc">
-          Когнитивно-поведенческие техники и эмоциональная поддержка.
-          Наш AI-ассистент всегда готов к диалогу — днём и ночью.
-        </p>
-        <span class="service-tag">24/7 Доступ</span>
-      </div>
-      <div class="service-card">
-        <span class="service-icon">𓃭</span>
-        <h3 class="service-title">Нейрокогнитивная Тренировка</h3>
-        <p class="service-desc">
-          Научно обоснованные упражнения для восстановления когнитивных функций,
-          памяти и концентрации внимания.
-        </p>
-        <span class="service-tag">Нейронаука</span>
-      </div>
-      <div class="service-card">
-        <span class="service-icon">𓆙</span>
-        <h3 class="service-title">Нутрициология & Образ Жизни</h3>
-        <p class="service-desc">
-          Персонализированные рекомендации по питанию и образу жизни,
-          поддерживающие процесс реабилитации.
-        </p>
-        <span class="service-tag">Холистика</span>
-      </div>
-      <div class="service-card">
-        <span class="service-icon">𓅓</span>
-        <h3 class="service-title">Мониторинг Прогресса</h3>
-        <p class="service-desc">
-          Детальная аналитика вашего восстановления. Визуализация динамики,
-          достижений и областей для улучшения.
-        </p>
-        <span class="service-tag">Аналитика</span>
-      </div>
-      <div class="service-card">
-        <span class="service-icon">𓏤</span>
-        <h3 class="service-title">Экспертная Команда</h3>
-        <p class="service-desc">
-          Связь с командой сертифицированных специалистов через AI-платформу.
-          Эскалация к живому эксперту при необходимости.
-        </p>
-        <span class="service-tag">Экспертиза</span>
-      </div>
+<section class="sec sec-ink2" id="method">
+  <div class="wrap rv">
+    <p class="lbl"><span data-ru>Метод</span><span data-en>Method</span></p>
+    <h2 class="s-title"><span data-ru>Метод <span class="gold">Python</span></span><span data-en>The <span class="gold">Python</span> Method</span></h2>
+    <div class="gline"></div>
+    <p class="s-desc"><span data-ru>Четыре шага к устойчивому результату.</span><span data-en>Four steps to a lasting result.</span></p>
+    <div class="steps">
+      <div class="step"><div class="step-n">I</div><h3 class="step-t"><span data-ru>Диагностика</span><span data-en>Diagnosis</span></h3><p class="step-d"><span data-ru>Оценка состояния и построение профиля.</span><span data-en>Assessment and profile building.</span></p></div>
+      <div class="step"><div class="step-n">II</div><h3 class="step-t"><span data-ru>Стратегия</span><span data-en>Strategy</span></h3><p class="step-d"><span data-ru>Персональный план восстановления.</span><span data-en>A personal recovery plan.</span></p></div>
+      <div class="step"><div class="step-n">III</div><h3 class="step-t"><span data-ru>Действие</span><span data-en>Action</span></h3><p class="step-d"><span data-ru>Выполнение с сопровождением Карена.</span><span data-en>Execution guided by Karen.</span></p></div>
+      <div class="step"><div class="step-n">IV</div><h3 class="step-t"><span data-ru>Результат</span><span data-en>Result</span></h3><p class="step-d"><span data-ru>Устойчивое восстановление.</span><span data-en>Sustainable recovery.</span></p></div>
     </div>
   </div>
 </section>
 
-<!-- METHOD -->
-<section class="method-section" id="method">
-  <div class="section-inner">
-    <p class="section-label">𓋹 Наш Путь</p>
-    <h2 class="section-title">Метод <span class="gold">Python</span></h2>
-    <div class="gold-line"></div>
-    <p class="section-desc">Четыре шага к вашему восстановлению, проверенных наукой.</p>
-    <div class="method-steps">
-      <div class="step">
-        <div class="step-num">I</div>
-        <h3 class="step-title">Диагностика</h3>
-        <p class="step-desc">Комплексная оценка вашего состояния. AI анализирует данные и выстраивает персональный профиль.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">II</div>
-        <h3 class="step-title">Стратегия</h3>
-        <p class="step-desc">Разработка индивидуального плана восстановления с учётом всех аспектов вашего здоровья.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">III</div>
-        <h3 class="step-title">Действие</h3>
-        <p class="step-desc">Выполнение программы с постоянным AI-сопровождением и адаптацией в реальном времени.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">IV</div>
-        <h3 class="step-title">Трансформация</h3>
-        <p class="step-desc">Достижение устойчивых результатов и поддержание достигнутого уровня здоровья.</p>
-      </div>
+<section class="cta" id="start">
+  <div class="wrap rv">
+    <p class="lbl">☥ <span data-ru>Начните сегодня</span><span data-en>Start today</span></p>
+    <h2 class="s-title"><span data-ru>Ваш путь к восстановлению<br><span class="gold">начинается здесь</span></span><span data-en>Your path to recovery<br><span class="gold">begins here</span></span></h2>
+    <div class="gline"></div>
+    <p class="s-desc"><span data-ru>Первый разговор с Кареном — бесплатно.</span><span data-en>Your first talk with Karen is free.</span></p>
+    <div class="h-btns">
+      <a href="https://t.me/PythonsMethod_bot" target="_blank" class="btn btn-g">☥ <span data-ru>Открыть в Telegram</span><span data-en>Open in Telegram</span></a>
+      <a href="mailto:info@pythonmethod.com" class="btn btn-o"><span data-ru>Написать нам</span><span data-en>Contact us</span></a>
     </div>
   </div>
 </section>
 
-<!-- CTA -->
-<section class="cta-section" id="contact">
-  <div class="section-inner">
-    <p class="section-label">𓂀 Начните Сегодня</p>
-    <h2 class="section-title" style="text-align:center;">
-      Ваш путь к восстановлению<br>
-      <span class="gold">начинается здесь</span>
-    </h2>
-    <div class="gold-line" style="margin:1.5rem auto;"></div>
-    <p class="section-desc" style="text-align:center;">
-      Запустите персональную программу реабилитации прямо сейчас.<br>
-      Первая консультация с AI-ассистентом — бесплатно.
-    </p>
-    <div class="hero-buttons" style="margin-top:2.5rem;">
-      <a href="https://t.me/PythonsMethod_bot" class="btn-primary" target="_blank">
-        𓋹 Открыть в Telegram
-      </a>
-      <a href="mailto:info@pythonmethod.com" class="btn-secondary">
-        Написать Нам
-      </a>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
 <footer>
-  <div class="footer-inner">
-    <div class="footer-brand">
-      <a href="#" class="nav-logo">
-        <span class="ankh">𓂀</span>
-        Python Method
-      </a>
-      <p class="footer-desc">
-        Digital Rehabilitation Center — инновационная платформа цифровой реабилитации,
-        объединяющая клиническую экспертизу и искусственный интеллект.
-      </p>
+  <div class="wrap">
+    <div class="f-grid">
+      <div><a href="#top" class="logo"><span class="ankh">☥</span> PYTHON METHOD</a><p class="f-desc"><span data-ru>Цифровой центр восстановления. Клиническая логика и интеллектуальное сопровождение.</span><span data-en>Digital rehabilitation center. Clinical logic and intelligent guidance.</span></p></div>
+      <div class="f-col"><h4><span data-ru>Центр</span><span data-en>Center</span></h4><ul><li><a href="#about" data-ru>О центре</a><a href="#about" data-en>About</a></li><li><a href="#pillars" data-ru>Направления</a><a href="#pillars" data-en>Programs</a></li><li><a href="#method" data-ru>Метод</a><a href="#method" data-en>Method</a></li></ul></div>
+      <div class="f-col"><h4><span data-ru>Контакт</span><span data-en>Contact</span></h4><ul><li><a href="https://t.me/PythonsMethod_bot" target="_blank">Telegram</a></li><li><a href="mailto:info@pythonmethod.com">Email</a></li></ul></div>
     </div>
-    <div class="footer-col">
-      <h4>Программы</h4>
-      <ul>
-        <li><a href="#services">Физическая</a></li>
-        <li><a href="#services">Психологическая</a></li>
-        <li><a href="#services">Нейрокогнитивная</a></li>
-        <li><a href="#services">Нутрициология</a></li>
-      </ul>
-    </div>
-    <div class="footer-col">
-      <h4>Ресурсы</h4>
-      <ul>
-        <li><a href="#">О методе</a></li>
-        <li><a href="#">Исследования</a></li>
-        <li><a href="#">Блог</a></li>
-        <li><a href="#">FAQ</a></li>
-      </ul>
-    </div>
-    <div class="footer-col">
-      <h4>Контакты</h4>
-      <ul>
-        <li><a href="https://t.me/PythonsMethod_bot" target="_blank">Telegram Bot</a></li>
-        <li><a href="#">Email</a></li>
-        <li><a href="#">Instagram</a></li>
-      </ul>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <p>© 2026 <span class="gold">Python Method</span>. All rights reserved.</p>
-    <p>𓂀 Digital Rehabilitation Center</p>
+    <div class="f-bot"><p>© 2026 <span class="gold">Python Method</span></p><p>☥ Digital Rehabilitation Center</p></div>
   </div>
 </footer>
 
 <script>
-// Smooth scroll for anchor links
-document.querySelectorAll('a[href^="#"]').forEach(a => {
-  a.addEventListener('click', e => {
-    e.preventDefault();
-    const target = document.querySelector(a.getAttribute('href'));
-    if (target) target.scrollIntoView({ behavior: 'smooth' });
-  });
+var lang=document.getElementById('lang');
+lang.addEventListener('click',function(e){
+  var t=e.target.closest('[data-l]');if(!t)return;
+  lang.querySelectorAll('span').forEach(function(s){s.classList.remove('on')});
+  t.classList.add('on');
+  document.body.classList.toggle('en',t.dataset.l==='en');
+  document.getElementById('htmlRoot').lang=t.dataset.l;
 });
-
-// Nav active state on scroll
-const sections = document.querySelectorAll('section[id]');
-const navLinks = document.querySelectorAll('.nav-links a');
-window.addEventListener('scroll', () => {
-  let current = '';
-  sections.forEach(s => {
-    if (window.scrollY >= s.offsetTop - 100) current = s.id;
-  });
-  navLinks.forEach(a => {
-    a.style.color = a.getAttribute('href') === '#' + current 
-      ? 'var(--gold-light)' : '';
-  });
-});
-
-// Entrance animations
-const observer = new IntersectionObserver((entries) => {
-  entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      entry.target.style.opacity = '1';
-      entry.target.style.transform = 'translateY(0)';
-    }
-  });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('.service-card, .step').forEach(el => {
-  el.style.opacity = '0';
-  el.style.transform = 'translateY(20px)';
-  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-  observer.observe(el);
-});
+var burger=document.getElementById('burger'),mob=document.getElementById('mobMenu');
+burger.addEventListener('click',function(){mob.classList.toggle('open')});
+mob.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){mob.classList.remove('open')})});
+document.querySelectorAll('a[href^="#"]').forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();var el=document.querySelector(a.getAttribute('href'));if(el)el.scrollIntoView({behavior:'smooth'})})});
+window.addEventListener('scroll',function(){document.getElementById('nav').style.background=window.scrollY>20?'rgba(7,7,7,.94)':'rgba(7,7,7,.82)'});
+var io=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting)en.target.classList.add('in')})},{threshold:.12});
+document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});
 </script>
 </body>
 </html>
