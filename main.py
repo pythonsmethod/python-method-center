@@ -7,6 +7,7 @@ import re
 import logging
 import stripe
 from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 import httpx
 
@@ -82,6 +83,7 @@ _APP_DEPLOY_SHA = "diag-v1"
 log.info("[STARTUP] Python Method Center booting. deploy_sha=%s", _APP_DEPLOY_SHA)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 OFERTA_PATH = os.path.join(BASE_DIR, "Python Method Oferta v2.pdf")
 OFERTA_URL = "https://python-method-center-production-24ec.up.railway.app/documents/oferta"
 
@@ -931,7 +933,7 @@ async def stripe_webhook(request: Request):
 # ============================================================
 @app.get("/")
 async def root():
-    return {"status": "Python Method Center is running"}
+        return FileResponse(os.path.join(BASE_DIR, "static", "index.html"))
 
 
 @app.get("/health")
