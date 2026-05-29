@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Method Center — Explore the Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Manrope:wght@300;400;500;600;700&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#C9A24B;--gold-lt:#E4C779;--gold-dk:#8A6A1F;--ink:#070707;--ink2:#0E0E0F;--ink3:#16161A;--ink4:#1E1E22;--cream:#F3ECDD;--txt:#C8BCA0;--dim:#7E745C;--line:rgba(201,162,75,.16)}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--txt);font-family:'Manrope',sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased;min-height:100vh}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--ink)}::-webkit-scrollbar-thumb{background:var(--gold-dk);border-radius:3px}
+.cz{font-family:'Cinzel',serif}
+.gold{color:var(--gold)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+[data-en]{display:none}
+body.en [data-ru]{display:none}
+body.en [data-en]{display:inline}
+body.en [data-en].blk{display:block}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(7,7,7,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.logo{font-family:'Cinzel',serif;font-weight:700;font-size:17px;letter-spacing:.14em;color:var(--gold);text-decoration:none;display:flex;align-items:center;gap:9px}
+.logo .ankh{font-size:20px}
+.nav-r{display:flex;align-items:center;gap:26px}
+.nav-back{color:var(--dim);text-decoration:none;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:color .25s}
+.nav-back:hover{color:var(--gold-lt)}
+.lang{display:flex;gap:2px;border:1px solid var(--line);border-radius:30px;padding:3px;cursor:pointer}
+.lang span{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 10px;border-radius:30px;color:var(--dim);transition:all .25s}
+.lang span.on{background:var(--gold);color:var(--ink)}
+.hero{position:relative;overflow:hidden;padding:150px 0 80px;text-align:center}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse 60% 70% at 50% 30%,rgba(201,162,75,.10),transparent 62%),linear-gradient(180deg,#0a0a0b,#070707)}
+.hero-grid-bg{position:absolute;inset:0;opacity:.03;background-image:repeating-linear-gradient(0deg,var(--gold) 0 1px,transparent 1px 46px),repeating-linear-gradient(90deg,var(--gold) 0 1px,transparent 1px 46px)}
+.hero-inner{position:relative;z-index:2}
+.h-eye{font-size:36px;color:var(--gold);opacity:.75;margin-bottom:18px;display:block;text-shadow:0 0 26px rgba(201,162,75,.5)}
+.h-eyebrow{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.42em;color:var(--gold);text-transform:uppercase;margin-bottom:18px}
+.h-title{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(30px,4.6vw,52px);line-height:1.1;color:var(--cream);margin-bottom:18px}
+.h-lead{font-size:clamp(15px,1.7vw,17px);line-height:1.85;color:var(--txt);opacity:.85;max-width:620px;margin:0 auto}
+.h-gline{width:66px;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:28px auto 0}
+section.sec{padding:80px 0;position:relative}
+.sec-ink2{background:var(--ink2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sec-head{text-align:center;margin-bottom:50px}
+.lbl{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.4em;color:var(--gold);text-transform:uppercase;margin-bottom:14px}
+.s-title{font-family:'Cinzel',serif;font-weight:700;font-size:clamp(24px,3.4vw,36px);line-height:1.2;color:var(--cream);margin-bottom:16px}
+.gline{width:66px;height:2px;background:linear-gradient(90deg,var(--gold),transparent);margin:18px auto 0}
+.sec-head .gline{margin-left:auto;margin-right:auto}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.step{text-align:center;padding:0 8px}
+.step-n{width:60px;height:60px;border-radius:50%;border:1.5px solid var(--gold);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-family:'Cinzel',serif;font-size:19px;font-weight:900;color:var(--gold);background:var(--ink2);box-shadow:0 0 22px rgba(201,162,75,.14)}
+.step-t{font-family:'Cinzel',serif;font-size:15px;color:var(--cream);letter-spacing:.03em;line-height:1.4}
+.depts{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.dept{background:linear-gradient(165deg,var(--ink3),var(--ink2));border:1px solid var(--line);border-radius:10px;padding:30px 28px;transition:all .35s;position:relative;overflow:hidden}
+.dept::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .35s}
+.dept:hover{transform:translateY(-6px);border-color:rgba(201,162,75,.34)}
+.dept:hover::before{opacity:1}
+.dept-ic{width:52px;height:52px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:25px;color:var(--gold);margin-bottom:18px;background:var(--ink2);box-shadow:0 0 18px rgba(201,162,75,.12);filter:drop-shadow(0 0 6px rgba(201,162,75,.25))}
+.dept-t{font-family:'Cinzel',serif;font-size:17px;font-weight:600;color:var(--gold-lt);letter-spacing:.03em;margin-bottom:10px}
+.dept-d{font-size:13.5px;line-height:1.7;color:var(--dim)}
+.founder{display:grid;grid-template-columns:.7fr 1.3fr;gap:50px;align-items:center}
+.founder .karen{display:flex;justify-content:center}
+.karen-frame{position:relative;width:300px;max-width:80vw;aspect-ratio:3/3.7;border:1px solid var(--line);border-radius:4px;background:linear-gradient(165deg,var(--ink3),var(--ink2));overflow:hidden;display:flex;align-items:flex-end;justify-content:center;box-shadow:0 28px 70px rgba(0,0,0,.55)}
+.karen-frame::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 24%,rgba(201,162,75,.14),transparent 65%);z-index:2;pointer-events:none}
+.karen-frame::after{content:'';position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid var(--line);border-radius:2px;pointer-events:none;z-index:3}
+.karen-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 16%;z-index:1}
+.karen-glyph{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--gold);opacity:.7;z-index:4;text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.founder-role{font-family:'Playfair Display',serif;font-style:italic;font-size:19px;color:var(--gold-lt);margin:6px 0 0}
+.founder-body .s-title{margin-bottom:4px}
+.founder-body .gline{margin:18px 0}
+.s-desc{font-size:15px;line-height:1.85;color:var(--txt);opacity:.84;max-width:600px}
+.next{text-align:center;position:relative;overflow:hidden;background:radial-gradient(ellipse 90% 90% at 50% 40%,rgba(201,162,75,.12),transparent 66%),var(--ink2);border-top:1px solid var(--line);padding:96px 0}
+.next-eye{font-size:36px;color:var(--gold);opacity:.7;margin-bottom:18px;display:block;text-shadow:0 0 26px rgba(201,162,75,.5)}
+.next .s-desc{margin:0 auto 32px;text-align:center}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:15px 32px;font-family:'Cinzel',serif;font-size:12.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;text-decoration:none;cursor:pointer;border:none;transition:all .3s}
+.btn-g{background:linear-gradient(135deg,var(--gold-dk),var(--gold),var(--gold-lt));color:var(--ink);box-shadow:0 6px 26px rgba(201,162,75,.26)}
+.btn-g:hover{transform:translateY(-2px);box-shadow:0 10px 34px rgba(201,162,75,.4)}
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s,transform .7s}
+.reveal.in{opacity:1;transform:none}
+@media(max-width:880px){
+.steps{grid-template-columns:1fr 1fr;gap:30px}
+.depts{grid-template-columns:1fr 1fr}
+.founder{grid-template-columns:1fr;gap:32px;text-align:center}
+.founder-body .gline{margin-left:auto;margin-right:auto}
+.founder-body .s-desc{margin-left:auto;margin-right:auto}
+}
+@media(max-width:520px){
+.steps{grid-template-columns:1fr}
+.depts{grid-template-columns:1fr}
+.hero{padding:130px 0 64px}
+}
+</style>
+</head>
+<body>
+<nav>
+<a href="/" class="logo"><span class="ankh">☥</span> PYTHON METHOD</a>
+<div class="nav-r">
+<a href="/static/welcome.html" class="nav-back"><span data-ru>← В центр</span><span data-en>← Welcome</span></a>
+<div class="lang" id="lang"><span id="ru" class="on">RU</span><span id="en">EN</span></div>
+</div>
+</nav>
+
+<section class="hero">
+<div class="hero-bg"></div>
+<div class="hero-grid-bg"></div>
+<div class="wrap hero-inner">
+<span class="h-eye">𓂀</span>
+<div class="h-eyebrow">☥ Python Method Center ☥</div>
+<h1 class="h-title"><span data-ru>Добро пожаловать в Python Method Center.</span><span data-en>Welcome to Python Method Center.</span></h1>
+<p class="h-lead"><span data-ru>Центр создан для того, чтобы помогать человеку ориентироваться, сохранять структуру и понимать следующий шаг.</span><span data-en>The Center is designed to help people navigate their journey, maintain structure, and understand their next step.</span></p>
+<div class="h-gline"></div>
+</div>
+</section>
+
+<section class="sec reveal">
+<div class="wrap">
+<div class="sec-head">
+<div class="lbl"><span data-ru>Как работает центр</span><span data-en>How the Center works</span></div>
+<h2 class="s-title"><span data-ru>Ваш маршрут — шаг за шагом</span><span data-en>Your route — step by step</span></h2>
+<div class="gline"></div>
+</div>
+<div class="steps">
+<div class="step"><div class="step-n">I</div><div class="step-t"><span data-ru>Знакомство</span><span data-en>Introduction</span></div></div>
+<div class="step"><div class="step-n">II</div><div class="step-t"><span data-ru>Определение маршрута</span><span data-en>Defining the route</span></div></div>
+<div class="step"><div class="step-n">III</div><div class="step-t"><span data-ru>Сопровождение</span><span data-en>Guidance</span></div></div>
+<div class="step"><div class="step-n">IV</div><div class="step-t"><span data-ru>Следующий шаг</span><span data-en>Next step</span></div></div>
+</div>
+</div>
+</section>
+
+<section class="sec sec-ink2 reveal">
+<div class="wrap">
+<div class="sec-head">
+<div class="lbl"><span data-ru>Отделы центра</span><span data-en>Center departments</span></div>
+<h2 class="s-title"><span data-ru>Структура сопровождения</span><span data-en>Structure of support</span></h2>
+<div class="gline"></div>
+</div>
+<div class="depts">
+<div class="dept"><div class="dept-ic">☥</div><div class="dept-t"><span data-ru>Знакомство</span><span data-en>Welcome</span></div><p class="dept-d"><span data-ru>Первый вход в центр и знакомство с системой сопровождения.</span><span data-en>Your first entry into the Center and an introduction to the system.</span></p></div>
+<div class="dept"><div class="dept-ic">𓏛</div><div class="dept-t"><span data-ru>Документы</span><span data-en>Documents</span></div><p class="dept-d"><span data-ru>Хранение и упорядочивание материалов вашего маршрута.</span><span data-en>Storage and organization of your route materials.</span></p></div>
+<div class="dept"><div class="dept-ic">𓂀</div><div class="dept-t"><span data-ru>Персональный маршрут</span><span data-en>Personal Route</span></div><p class="dept-d"><span data-ru>Индивидуальная траектория, выстроенная под вас.</span><span data-en>An individual trajectory built around you.</span></p></div>
+<div class="dept"><div class="dept-ic">𓋹</div><div class="dept-t"><span data-ru>Сопровождение</span><span data-en>Support</span></div><p class="dept-d"><span data-ru>Поддержка на каждом этапе пути, чтобы вы не теряли направление.</span><span data-en>Support at every stage so you never lose direction.</span></p></div>
+<div class="dept"><div class="dept-ic">𓍝</div><div class="dept-t"><span data-ru>База знаний</span><span data-en>Knowledge Base</span></div><p class="dept-d"><span data-ru>Структурированные материалы и ответы под рукой.</span><span data-en>Structured materials and answers within reach.</span></p></div>
+<div class="dept"><div class="dept-ic">𓊃</div><div class="dept-t"><span data-ru>Связь с центром</span><span data-en>Contact Center</span></div><p class="dept-d"><span data-ru>Прямой канал связи, когда нужен следующий шаг.</span><span data-en>A direct channel when you need the next step.</span></p></div>
+</div>
+</div>
+</section>
+
+<section class="sec reveal">
+<div class="wrap founder">
+<div class="karen">
+<div class="karen-frame">
+<span class="karen-glyph">𓂀</span>
+<img class="karen-photo" src="/static/karen.jpg" alt="Karen Pashikyan" loading="lazy">
+</div>
+</div>
+<div class="founder-body">
+<div class="lbl"><span data-ru>Основатель</span><span data-en>Founder</span></div>
+<h2 class="s-title">Karen Pashikyan</h2>
+<div class="founder-role"><span data-ru>Основатель Python Method</span><span data-en>Founder of the Python Method</span></div>
+<div class="gline"></div>
+<p class="s-desc"><span data-ru>Создатель метода и основатель Python Method Center. Человек, который стоит за системой сопровождения центра.</span><span data-en>Creator of the method and founder of Python Method Center. The person behind the Center's system of guidance.</span></p>
+</div>
+</div>
+</section>
+
+<section class="next reveal">
+<div class="wrap">
+<span class="next-eye">𓂀</span>
+<div class="lbl"><span data-ru>Следующий шаг</span><span data-en>Next step</span></div>
+<h2 class="s-title"><span data-ru>Готовы продолжить?</span><span data-en>Ready to continue?</span></h2>
+<div class="gline" style="margin:18px auto 24px"></div>
+<p class="s-desc"><span data-ru>Если вы готовы продолжить знакомство с центром, выберите следующий шаг.</span><span data-en>If you are ready to continue exploring the Center, choose your next step.</span></p>
+<a href="/static/welcome.html" class="btn btn-g">☥ <span data-ru>Вернуться в центр</span><span data-en>Back to Welcome Flow</span></a>
+</div>
+</section>
+
+<script>
+var ru=document.getElementById('ru'),en=document.getElementById('en'),root=document.getElementById('htmlRoot');
+function setLang(l){if(l==='en'){document.body.classList.add('en');root.lang='en';en.classList.add('on');ru.classList.remove('on');}else{document.body.classList.remove('en');root.lang='ru';ru.classList.add('on');en.classList.remove('on');}}
+ru.onclick=function(){setLang('ru')};en.onclick=function(){setLang('en')};
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)e.target.classList.add('in')})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+</script>
+</body>
+</html>
