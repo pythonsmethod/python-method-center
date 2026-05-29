@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Method Center — Welcome</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Manrope:wght@300;400;500;600;700&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#C9A24B;--gold-lt:#E4C779;--gold-dk:#8A6A1F;--ink:#070707;--ink2:#0E0E0F;--ink3:#16161A;--ink4:#1E1E22;--cream:#F3ECDD;--txt:#C8BCA0;--dim:#7E745C;--line:rgba(201,162,75,.16)}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--ink);color:var(--txt);font-family:'Manrope',sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased;min-height:100vh}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--ink)}::-webkit-scrollbar-thumb{background:var(--gold-dk);border-radius:3px}
+.cz{font-family:'Cinzel',serif}
+.gold{color:var(--gold)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+[data-en]{display:none}
+body.en [data-ru]{display:none}
+body.en [data-en]{display:inline}
+body.en [data-en].blk{display:block}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(7,7,7,.82);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.logo{font-family:'Cinzel',serif;font-weight:700;font-size:17px;letter-spacing:.14em;color:var(--gold);text-decoration:none;display:flex;align-items:center;gap:9px}
+.logo .ankh{font-size:20px}
+.nav-r{display:flex;align-items:center;gap:26px}
+.nav-back{color:var(--dim);text-decoration:none;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;transition:color .25s}
+.nav-back:hover{color:var(--gold-lt)}
+.lang{display:flex;gap:2px;border:1px solid var(--line);border-radius:30px;padding:3px;cursor:pointer}
+.lang span{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 10px;border-radius:30px;color:var(--dim);transition:all .25s}
+.lang span.on{background:var(--gold);color:var(--ink)}
+.welcome{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:120px 0 80px;text-align:center}
+.welcome-bg{position:absolute;inset:0;background:radial-gradient(ellipse 60% 70% at 50% 38%,rgba(201,162,75,.10),transparent 62%),linear-gradient(180deg,#0a0a0b,#070707)}
+.welcome-grid-bg{position:absolute;inset:0;opacity:.03;background-image:repeating-linear-gradient(0deg,var(--gold) 0 1px,transparent 1px 46px),repeating-linear-gradient(90deg,var(--gold) 0 1px,transparent 1px 46px)}
+.welcome-inner{position:relative;z-index:2;width:100%}
+.w-eye{font-size:36px;color:var(--gold);opacity:.75;margin-bottom:18px;display:block;text-shadow:0 0 26px rgba(201,162,75,.5)}
+.w-eyebrow{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.42em;color:var(--gold);text-transform:uppercase;margin-bottom:18px}
+.w-title{font-family:'Cinzel',serif;font-weight:900;font-size:clamp(30px,4.6vw,52px);line-height:1.1;color:var(--cream);margin-bottom:14px}
+.w-sub{font-family:'Playfair Display',serif;font-style:italic;font-size:clamp(16px,2vw,22px);color:var(--gold-lt);margin-bottom:8px}
+.w-gline{width:66px;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);margin:26px auto 0}
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:54px;text-align:left}
+.card{position:relative;display:block;text-decoration:none;background:linear-gradient(165deg,var(--ink3),var(--ink2));border:1px solid var(--line);border-radius:10px;padding:34px 32px;transition:all .35s;overflow:hidden;cursor:pointer}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0;transition:opacity .35s}
+.card::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 60% at 50% 0%,rgba(201,162,75,.07),transparent 60%);opacity:0;transition:opacity .35s;pointer-events:none}
+.card:hover{transform:translateY(-6px);border-color:rgba(201,162,75,.34)}
+.card:hover::before,.card:hover::after{opacity:1}
+.card-top{display:flex;align-items:center;gap:18px;margin-bottom:16px}
+.card-ic{flex:0 0 auto;width:56px;height:56px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:27px;color:var(--gold);background:var(--ink2);box-shadow:0 0 18px rgba(201,162,75,.12);filter:drop-shadow(0 0 6px rgba(201,162,75,.25))}
+.card-num{font-family:'Cinzel',serif;font-size:12px;letter-spacing:.3em;color:var(--dim)}
+.card-t{font-family:'Cinzel',serif;font-size:clamp(17px,2vw,21px);font-weight:600;color:var(--gold-lt);letter-spacing:.03em;margin-bottom:10px;line-height:1.25}
+.card-d{font-size:14px;line-height:1.7;color:var(--dim)}
+.card-arrow{margin-top:18px;font-family:'Cinzel',serif;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);display:inline-flex;align-items:center;gap:8px;opacity:.85;transition:gap .3s,opacity .3s}
+.card:hover .card-arrow{gap:14px;opacity:1}
+.reveal{opacity:0;transform:translateY(24px);transition:opacity .7s,transform .7s}
+.reveal.in{opacity:1;transform:none}
+.card.reveal{transition:opacity .7s,transform .7s,border-color .35s}
+@media(max-width:760px){
+.cards{grid-template-columns:1fr;gap:16px}
+.welcome{padding:104px 0 64px}
+.card{padding:28px 24px}
+.card-ic{width:48px;height:48px;font-size:23px}
+}
+</style>
+</head>
+<body>
+<nav>
+<a href="/" class="logo"><span class="ankh">☥</span> PYTHON METHOD</a>
+<div class="nav-r">
+<a href="/" class="nav-back"><span data-ru>← На главную</span><span data-en>← Home</span></a>
+<div class="lang" id="lang"><span id="ru" class="on">RU</span><span id="en">EN</span></div>
+</div>
+</nav>
+
+<main class="welcome">
+<div class="welcome-bg"></div>
+<div class="welcome-grid-bg"></div>
+<div class="wrap welcome-inner">
+<span class="w-eye">𓂀</span>
+<div class="w-eyebrow">☥ Python Method Center ☥</div>
+<h1 class="w-title"><span data-ru>Добро пожаловать в центр.</span><span data-en>Welcome to the Center.</span></h1>
+<p class="w-sub"><span data-ru>Что привело вас сегодня?</span><span data-en>What brings you here today?</span></p>
+<div class="w-gline"></div>
+
+<div class="cards">
+<a class="card reveal" href="#">
+<div class="card-top"><div class="card-ic">𓂀</div><span class="card-num">I</span></div>
+<div class="card-t"><span data-ru>Познакомиться с центром</span><span data-en>Explore the Center</span></div>
+<p class="card-d"><span data-ru>Узнать, как работает система и какие возможности доступны.</span><span data-en>Learn how the system works and what possibilities are available.</span></p>
+<span class="card-arrow"><span data-ru>Дальше</span><span data-en>Continue</span> →</span>
+</a>
+<a class="card reveal" href="#">
+<div class="card-top"><div class="card-ic">𓐎</div><span class="card-num">II</span></div>
+<div class="card-t"><span data-ru>У меня есть вопрос</span><span data-en>I Have a Question</span></div>
+<p class="card-d"><span data-ru>Получить ответ и понять следующий шаг.</span><span data-en>Get an answer and understand your next step.</span></p>
+<span class="card-arrow"><span data-ru>Дальше</span><span data-en>Continue</span> →</span>
+</a>
+<a class="card reveal" href="#">
+<div class="card-top"><div class="card-ic">𓂽</div><span class="card-num">III</span></div>
+<div class="card-t"><span data-ru>Начать индивидуальный путь</span><span data-en>Start My Personal Journey</span></div>
+<p class="card-d"><span data-ru>Начать персональное знакомство с системой.</span><span data-en>Begin your personal introduction to the system.</span></p>
+<span class="card-arrow"><span data-ru>Дальше</span><span data-en>Continue</span> →</span>
+</a>
+<a class="card reveal" href="#">
+<div class="card-top"><div class="card-ic">△</div><span class="card-num">IV</span></div>
+<div class="card-t"><span data-ru>Не знаю, с чего начать</span><span data-en>I Don't Know Where to Start</span></div>
+<p class="card-d"><span data-ru>Центр поможет определить следующий шаг.</span><span data-en>The Center will help you determine your next step.</span></p>
+<span class="card-arrow"><span data-ru>Дальше</span><span data-en>Continue</span> →</span>
+</a>
+</div>
+</div>
+</main>
+
+<script>
+var ru=document.getElementById('ru'),en=document.getElementById('en'),root=document.getElementById('htmlRoot');
+function setLang(l){if(l==='en'){document.body.classList.add('en');root.lang='en';en.classList.add('on');ru.classList.remove('on');}else{document.body.classList.remove('en');root.lang='ru';ru.classList.add('on');en.classList.remove('on');}}
+ru.onclick=function(){setLang('ru')};en.onclick=function(){setLang('en')};
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting)setTimeout(function(){e.target.classList.add('in')}, Array.prototype.indexOf.call(e.target.parentNode.children,e.target)*90)})},{threshold:.12});
+document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+</script>
+</body>
+</html>
