@@ -164,34 +164,95 @@ footer{text-align:center; padding:26px 20px 30px; color:var(--dim); font-size:11
 
 <script>
 (function(){
+  var G_EXPLORE="𓂀";var G_QUESTION="𓐎";var G_JOURNEY="𓂽";var G_DOCS="△";
+  var RESP_RU="Я помогу вам сориентироваться.<br><br>Что ближе к вашей ситуации сейчас?";
+  var RESP_EN="I will help you find your next step.<br><br>What feels closest to your situation right now?";
+  var RT_EXPLORE_RU="Познакомиться с центром";var RT_EXPLORE_EN="Explore the Center";
+  var RT_QUESTION_RU="У меня есть вопрос";var RT_QUESTION_EN="I Have a Question";
+  var RT_JOURNEY_RU="Начать индивидуальный путь";var RT_JOURNEY_EN="Start My Personal Journey";
+  var RT_DOCS_RU="У меня есть документы";var RT_DOCS_EN="I Have Documents";
   var body=document.body;
-  var field=document.getElementById('field');
+  var field=document.getElementById("field");
+  var msgs=document.getElementById("messages");
+  var composer=document.getElementById("composer");
   function setLang(l){
-    if(l==='en'){body.classList.add('en');} else {body.classList.remove('en');}
-    document.querySelectorAll('.lang span').forEach(function(s){s.classList.toggle('act', s.getAttribute('data-lang')===l);});
-    if(field){field.setAttribute('placeholder', field.getAttribute(l==='en'?'data-ph-en':'data-ph-ru'));}
+    if(l==="en"){body.classList.add("en");} else {body.classList.remove("en");}
+    document.querySelectorAll(".lang span").forEach(function(s){
+      if(s.getAttribute("data-lang")===l){s.classList.add("act");} else {s.classList.remove("act");}
+    });
   }
-  document.querySelectorAll('.lang span').forEach(function(s){
-    s.addEventListener('click', function(){setLang(s.getAttribute('data-lang'));});
+  document.querySelectorAll(".lang span").forEach(function(s){
+    s.addEventListener("click",function(){ setLang(s.getAttribute("data-lang")); });
   });
-  var messages=document.getElementById('messages');
-  var composer=document.getElementById('composer');
+
   function addUser(text){
-    var m=document.createElement('div');
-    m.className='msg center';
-    m.style.alignSelf='flex-end';
-    m.style.background='rgba(30,30,34,.7)';
+    var m=document.createElement("div");
+    m.className="msg user";
+    m.style.alignSelf="flex-end";
+    m.style.maxWidth="78%";
+    m.style.background="rgba(30,30,34,.7)";
+    m.style.border="1px solid var(--line)";
+    m.style.borderRadius="14px 14px 4px 14px";
+    m.style.padding="13px 18px";
+    m.style.color="var(--cream)";
+    m.style.fontFamily="Manrope,sans-serif";
+    m.style.fontSize="15px";
+    m.style.lineHeight="1.5";
     m.textContent=text;
-    messages.appendChild(m);
-    messages.scrollTop=messages.scrollHeight;
+    msgs.appendChild(m);
   }
-  composer.addEventListener('submit', function(e){
-    e.preventDefault();
-    var v=(field.value||'').trim();
-    if(!v) return;
-    addUser(v);
-    field.value='';
-  });
+
+  function routeHTML(href,gly,ru,en){
+    return '<a class="route" href="'+href+'">'+
+      '<span class="gly">'+gly+'</span>'+
+      '<span><span class="rt"><span data-ru>'+ru+'</span><span data-en>'+en+'</span></span></span>'+
+    '</a>';
+  }
+
+  function addCenter(){
+    var wrap=document.createElement("div");
+    wrap.className="msg center-reply";
+    wrap.style.alignSelf="flex-start";
+    wrap.style.maxWidth="92%";
+    wrap.style.display="flex";
+    wrap.style.flexDirection="column";
+    wrap.style.gap="16px";
+    var bubble=document.createElement("div");
+    bubble.style.background="linear-gradient(135deg,var(--ink3),var(--ink4))";
+    bubble.style.border="1px solid var(--line)";
+    bubble.style.borderRadius="14px 14px 14px 4px";
+    bubble.style.padding="16px 20px";
+    bubble.style.color="var(--txt)";
+    bubble.style.fontFamily="Manrope,sans-serif";
+    bubble.style.fontSize="15px";
+    bubble.style.lineHeight="1.6";
+    bubble.innerHTML='<span data-ru>'+RESP_RU+'</span><span data-en>'+RESP_EN+'</span>';
+    var routes=document.createElement("div");
+    routes.className="routes reply-routes";
+    routes.innerHTML=
+      routeHTML("/static/explore.html",G_EXPLORE,RT_EXPLORE_RU,RT_EXPLORE_EN)+
+      routeHTML("/static/question.html",G_QUESTION,RT_QUESTION_RU,RT_QUESTION_EN)+
+      routeHTML("/static/journey.html",G_JOURNEY,RT_JOURNEY_RU,RT_JOURNEY_EN)+
+      routeHTML("#",G_DOCS,RT_DOCS_RU,RT_DOCS_EN);
+    wrap.appendChild(bubble);
+    wrap.appendChild(routes);
+    msgs.appendChild(wrap);
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+
+  function handleSend(){
+    var text=(field.value||"").trim();
+    if(!text) return;
+    addUser(text);
+    field.value="";
+    setTimeout(addCenter,260);
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+
+  if(composer){ composer.addEventListener("submit",function(e){e.preventDefault();handleSend();}); }
+  var sendBtn=document.getElementById("send");
+  if(sendBtn){ sendBtn.addEventListener("click",function(e){e.preventDefault();handleSend();}); }
+  if(field){ field.addEventListener("keydown",function(e){ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();handleSend();} }); }
 })();
 </script>
 </body>
