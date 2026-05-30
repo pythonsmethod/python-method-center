@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Method Center — AI Center Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Manrope:wght@300;400;500;600&family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#C9A24B; --gold-lt:#E4C779; --gold-dk:#8A6A1F;
+  --ink:#070707; --ink2:#0E0E0F; --ink3:#16161A; --ink4:#1E1E22;
+  --cream:#F3ECDD; --txt:#C8BCA0; --dim:#7E745C; --line:rgba(201,162,75,.16);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--ink); color:var(--txt);
+  font-family:'Manrope',sans-serif; -webkit-font-smoothing:antialiased;
+  background-image:linear-gradient(rgba(201,162,75,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(201,162,75,.05) 1px,transparent 1px);
+  background-size:64px 64px;
+  display:flex; flex-direction:column; min-height:100vh;
+}
+[data-en]{display:none}
+body.en [data-ru]{display:none}
+body.en [data-en]{display:inline}
+body.en [data-en].blk{display:block}
+header{
+  position:sticky; top:0; z-index:50;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:18px 30px; border-bottom:1px solid var(--line);
+  background:rgba(7,7,7,.82); backdrop-filter:blur(10px);
+}
+.brand{font-family:'Cinzel',serif; font-weight:700; letter-spacing:.18em; color:var(--cream); font-size:15px; text-decoration:none; display:flex; align-items:center; gap:8px}
+.brand .ank{color:var(--gold)}
+.nav-r{display:flex; align-items:center; gap:22px}
+.back{color:var(--dim); text-decoration:none; font-size:12.5px; letter-spacing:.12em; text-transform:uppercase; transition:color .3s}
+.back:hover{color:var(--gold-lt)}
+.lang{display:flex; border:1px solid var(--line); border-radius:30px; overflow:hidden}
+.lang span{padding:5px 13px; font-size:12px; letter-spacing:.1em; cursor:pointer; color:var(--dim); transition:.3s; user-select:none}
+.lang span.act{background:var(--gold); color:var(--ink); font-weight:600}
+.intro{text-align:center; padding:42px 24px 14px}
+.sigil{font-size:30px; color:var(--gold); opacity:.9; line-height:1}
+.eyebrow{font-family:'Cinzel',serif; letter-spacing:.34em; font-size:11px; color:var(--gold-dk); margin:14px 0 10px; text-transform:uppercase}
+.intro h1{font-family:'Playfair Display',serif; color:var(--cream); font-size:clamp(30px,5vw,52px); font-weight:400; line-height:1.1}
+.intro p{max-width:620px; margin:14px auto 0; color:var(--txt); font-size:clamp(14px,1.6vw,17px); line-height:1.7}
+.rule{width:60px; height:1px; background:linear-gradient(90deg,transparent,var(--gold),transparent); margin:22px auto 0}
+.shell{flex:1; width:100%; max-width:860px; margin:0 auto; padding:24px 20px 30px; display:flex; flex-direction:column}
+.messages{
+  flex:1; min-height:300px;
+  border:1px solid var(--line); border-radius:18px;
+  background:linear-gradient(180deg,rgba(22,22,26,.6),rgba(14,14,15,.6));
+  padding:26px; overflow-y:auto;
+  display:flex; flex-direction:column; gap:16px;
+}
+.msg{max-width:78%; padding:14px 18px; border-radius:14px; font-size:15px; line-height:1.6}
+.msg.center{
+  align-self:flex-start;
+  background:rgba(201,162,75,.07); border:1px solid var(--line); color:var(--cream);
+  border-top-left-radius:4px;
+}
+.msg.center .who{display:block; font-family:'Cinzel',serif; font-size:10.5px; letter-spacing:.2em; color:var(--gold-dk); text-transform:uppercase; margin-bottom:6px}
+.composer{display:flex; gap:12px; margin-top:18px}
+.composer input{
+  flex:1; padding:16px 20px; border-radius:30px;
+  background:var(--ink3); border:1px solid var(--line); color:var(--cream);
+  font-family:'Manrope',sans-serif; font-size:15px; outline:none; transition:border-color .3s;
+}
+.composer input::placeholder{color:var(--dim)}
+.composer input:focus{border-color:var(--gold-dk)}
+.composer button{
+  padding:0 28px; border-radius:30px; cursor:pointer;
+  background:linear-gradient(180deg,var(--gold-lt),var(--gold)); color:var(--ink);
+  font-family:'Cinzel',serif; font-weight:600; letter-spacing:.08em; font-size:13px; border:none;
+  transition:transform .2s, box-shadow .3s; white-space:nowrap;
+}
+.composer button:hover{transform:translateY(-1px); box-shadow:0 6px 22px rgba(201,162,75,.25)}
+.routes-label{text-align:center; font-family:'Cinzel',serif; letter-spacing:.28em; font-size:10.5px; color:var(--gold-dk); text-transform:uppercase; margin:30px 0 14px}
+.routes{display:grid; grid-template-columns:repeat(2,1fr); gap:14px}
+.route{
+  display:flex; align-items:center; gap:14px;
+  padding:18px 20px; border-radius:14px; cursor:pointer; text-decoration:none;
+  background:linear-gradient(180deg,rgba(30,30,34,.5),rgba(14,14,15,.5));
+  border:1px solid var(--line); transition:transform .25s, border-color .3s, background .3s;
+}
+.route:hover{transform:translateY(-2px); border-color:var(--gold-dk); background:rgba(201,162,75,.06)}
+.route .gly{font-size:22px; color:var(--gold); width:34px; text-align:center; flex-shrink:0}
+.route .rt{color:var(--cream); font-family:'Cinzel',serif; font-size:14px; letter-spacing:.04em}
+.route .rs{display:block; color:var(--dim); font-size:12px; margin-top:3px; font-family:'Manrope',sans-serif; letter-spacing:0}
+footer{text-align:center; padding:26px 20px 30px; color:var(--dim); font-size:11.5px; letter-spacing:.14em; border-top:1px solid var(--line); font-family:'Cinzel',serif}
+@media(max-width:760px){
+  header{padding:14px 18px}
+  .routes{grid-template-columns:1fr}
+  .msg{max-width:90%}
+  .composer button{padding:0 20px}
+  .shell{padding:18px 14px 24px}
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="/"><span class="ank">☥</span> PYTHON METHOD</a>
+  <div class="nav-r">
+    <a class="back" href="/static/welcome.html"><span data-ru>← В центр</span><span data-en>← Welcome</span></a>
+    <div class="lang"><span class="act" data-lang="ru">RU</span><span data-lang="en">EN</span></div>
+  </div>
+</header>
+
+<section class="intro">
+  <div class="sigil">𓂀</div>
+  <div class="eyebrow">☥ Python Method Center ☥</div>
+  <h1><span data-ru>AI Center Chat</span><span data-en>AI Center Chat</span></h1>
+  <p>
+    <span data-ru>Добро пожаловать в центр. Я помогу вам сориентироваться и определить следующий шаг.</span>
+    <span data-en>Welcome to the Center. I will help you find your next step.</span>
+  </p>
+  <div class="rule"></div>
+</section>
+
+<main class="shell">
+  <div class="messages" id="messages">
+    <div class="msg center">
+      <span class="who">Center</span>
+      <span data-ru>Добро пожаловать. Напишите, что вас привело сегодня, или выберите одно из направлений ниже.</span>
+      <span data-en>Welcome. Tell me what brought you here today, or choose one of the directions below.</span>
+    </div>
+  </div>
+
+  <form class="composer" id="composer" onsubmit="return false;">
+    <input id="field" type="text" autocomplete="off"
+      data-ph-ru="Напишите ваш вопрос..."
+      data-ph-en="Type your question..."
+      placeholder="Напишите ваш вопрос...">
+    <button id="send" type="submit"><span data-ru>Отправить</span><span data-en>Send</span></button>
+  </form>
+
+  <div class="routes-label"><span data-ru>Быстрые маршруты</span><span data-en>Quick Routes</span></div>
+  <div class="routes">
+    <a class="route" href="/static/explore.html">
+      <span class="gly">𓂀</span>
+      <span><span class="rt"><span data-ru>Познакомиться с центром</span><span data-en>Explore the Center</span></span>
+      <span class="rs"><span data-ru>Как работает система</span><span data-en>How the system works</span></span></span>
+    </a>
+    <a class="route" href="/static/question.html">
+      <span class="gly">𓐎</span>
+      <span><span class="rt"><span data-ru>У меня есть вопрос</span><span data-en>I Have a Question</span></span>
+      <span class="rs"><span data-ru>Получить ответ</span><span data-en>Get an answer</span></span></span>
+    </a>
+    <a class="route" href="/static/journey.html">
+      <span class="gly">𓂽</span>
+      <span><span class="rt"><span data-ru>Начать индивидуальный путь</span><span data-en>Start My Personal Journey</span></span>
+      <span class="rs"><span data-ru>Персональный маршрут</span><span data-en>A personal route</span></span></span>
+    </a>
+    <a class="route" href="/static/start.html">
+      <span class="gly">△</span>
+      <span><span class="rt"><span data-ru>Не знаю, с чего начать</span><span data-en>I Don't Know Where to Start</span></span>
+      <span class="rs"><span data-ru>Определить следующий шаг</span><span data-en>Find the next step</span></span></span>
+    </a>
+  </div>
+</main>
+
+<footer>☥ Python Method Center ☥</footer>
+
+<script>
+(function(){
+  var body=document.body;
+  var field=document.getElementById('field');
+  function setLang(l){
+    if(l==='en'){body.classList.add('en');} else {body.classList.remove('en');}
+    document.querySelectorAll('.lang span').forEach(function(s){s.classList.toggle('act', s.getAttribute('data-lang')===l);});
+    if(field){field.setAttribute('placeholder', field.getAttribute(l==='en'?'data-ph-en':'data-ph-ru'));}
+  }
+  document.querySelectorAll('.lang span').forEach(function(s){
+    s.addEventListener('click', function(){setLang(s.getAttribute('data-lang'));});
+  });
+  var messages=document.getElementById('messages');
+  var composer=document.getElementById('composer');
+  function addUser(text){
+    var m=document.createElement('div');
+    m.className='msg center';
+    m.style.alignSelf='flex-end';
+    m.style.background='rgba(30,30,34,.7)';
+    m.textContent=text;
+    messages.appendChild(m);
+    messages.scrollTop=messages.scrollHeight;
+  }
+  composer.addEventListener('submit', function(e){
+    e.preventDefault();
+    var v=(field.value||'').trim();
+    if(!v) return;
+    addUser(v);
+    field.value='';
+  });
+})();
+</script>
+</body>
+</html>
